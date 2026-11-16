@@ -197,18 +197,30 @@ class MediaTests(unittest.TestCase):
         chat.media.speech_slot = None
         result = {"text": "原始逐字稿", "confidence": .8, "voice": "zh-TW",
                   "engine": "Fixture ASR", "microphone": "Fixture Mic"}
-        with patch.object(QInputDialog, "getMultiLineText", return_value=("", False)):
+        with patch.object(QInputDialog, "getMultiLineText", side_effect=AssertionError("unexpected modal")):
+            chat.media.voice_result(False, "已停止。")
+            chat.media.voice_result(False, "低信心")
+            self.assertEqual(chat.input.toPlainText(), "保留原文")
             chat.media.voice_result(True, result)
-        self.assertEqual(chat.input.toPlainText(), "保留原文")
-        with patch.object(QInputDialog, "getMultiLineText", return_value=("新的逐字稿", True)) as review:
-            chat.media.voice_result(True, result)
-        self.assertIn("Fixture Mic", review.call_args.args[2])
-        self.assertIn("zh-TW", review.call_args.args[2])
-        self.assertIn("80%", review.call_args.args[2])
-        self.assertIn("保留原文", chat.input.toPlainText())
-        self.assertIn("新的逐字稿", chat.input.toPlainText())
+        self.assertEqual(chat.input.toPlainText(), "保留原文 原始逐字稿")
+        self.assertEqual(self.store.preference("new_chat_draft"), "保留原文 原始逐字稿")
+        self.assertIn("zh-TW", chat.media.last_status)
+        self.assertIn("80%", chat.media.last_status)
         self.assertEqual(self.store.read("SELECT count(*) FROM messages")[0][0], 0)
         self.assertIn("已加入草稿", chat.media.last_status)
+        chat.input.undo()
+        self.assertEqual(chat.input.toPlainText(), "保留原文")
+
+    def test_voice_result_stays_with_original_conversation(self):
+        original = self.store.write("INSERT INTO conversations(title) VALUES ('來源會話')")
+        chat = self.show()
+        with patch.object(chat, "selected", return_value=None):
+            chat.input.setPlainText("目前草稿")
+            chat.media.speech_slot = original
+            chat.media.voice_result(True, {"text": "原會話逐字稿", "engine": "fixture", "voice": "zh", "confidence": .82})
+            self.assertEqual(chat.input.toPlainText(), "目前草稿")
+        self.assertEqual(self.store.read("SELECT body FROM conversation_drafts WHERE conversation_id=?", original)[0][0], "原會話逐字稿")
+        self.assertEqual(self.store.read("SELECT count(*) FROM messages")[0][0], 0)
 
     def test_corrupt_image_and_no_ffmpeg_leave_no_attachment(self):
         assets = Attachments(self.store)

@@ -55,6 +55,7 @@ PAGES = [
 ]
 MODEL_PAGE = 17
 RESOURCE_PAGE = 18
+SETTINGS_PAGE = 9
 ITEM_ID = Qt.ItemDataRole.UserRole
 
 
@@ -2279,6 +2280,8 @@ class Settings(Page):
             commit.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             layout.addWidget(commit)
         layout.addWidget(label(build.workspace_label, "muted"))
+        if build.isolated:
+            layout.addWidget(label("這個試用工作區有自己的對話、人格、記憶與模型設定。試用變更保留在此，原工作區資料可從上一版入口開啟。", "muted"))
         data_root = label(str(self.store.root), "path")
         data_root.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(data_root)
@@ -2300,15 +2303,19 @@ class Settings(Page):
         self.loaded_values = self.values()
 
     def values(self):
-        return {"provider": self.provider.currentData(), "model": self.model.text()}
+        return {"provider": self.provider.currentData(), "model": self.model.text().strip()}
 
     def has_unsaved_changes(self):
         return self.loaded and self.values() != self.loaded_values
 
+    def persist_changes(self):
+        if self.has_unsaved_changes():
+            self.store.save_settings(self.values())
+            self.load()
+
     def save(self):
         def save_values():
-            self.store.save_settings({"provider": self.provider.currentData(), "model": self.model.text().strip()})
-            self.load()
+            self.persist_changes()
             self.window.notice("模型偏好已儲存。")
 
         self.perform(save_values)
@@ -2898,13 +2905,17 @@ class MainWindow(QMainWindow):
             self.notice("請等候檔案指紋計算完成再關閉。")
             event.ignore()
             return
-        pending = [PAGES[index][1] for index, page in enumerate(self.pages) if page.has_unsaved_changes()]
+        settings = self.pages[SETTINGS_PAGE]
+        pending = [PAGES[index][1] for index, page in enumerate(self.pages)
+                   if page is not settings and page.has_unsaved_changes()]
         if pending and not self.confirm("關閉 SEED", f"以下頁面有尚未儲存的內容：{'、'.join(pending)}。捨棄並關閉？"):
             event.ignore()
             return
         try:
+            settings.persist_changes()
             self.pages[1].save_draft()
-        except sqlite3.Error as exc:
+            self.store.set_preference("window_size", [self.width(), self.height()])
+        except (OSError, ValueError, sqlite3.Error) as exc:
             self.show_error(str(exc))
             event.ignore()
             return
@@ -2920,7 +2931,6 @@ class MainWindow(QMainWindow):
             job["request"].cancel()
         for request in tuple(self.provider_tests.values()):
             request.cancel()
-        self.store.set_preference("window_size", [self.width(), self.height()])
         self.pages[1].draft_timer.stop()
         self.pages[1].scroll_timer.stop()
         super().closeEvent(event)

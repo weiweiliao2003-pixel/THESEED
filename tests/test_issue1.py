@@ -1,5 +1,6 @@
 import array
 import json
+import sqlite3
 import sys
 import unittest
 import wave
@@ -17,7 +18,7 @@ from seed.dictation import WHISPER_MODEL, audio_device, installed_whisper, local
 from seed.metering import ResourceMeter
 from seed.store import Store
 from seed.theme import DEFAULT_SKIN
-from seed.window import MainWindow
+from seed.window import MainWindow, SETTINGS_PAGE
 
 
 class IssueOneTests(unittest.TestCase):
@@ -142,3 +143,39 @@ class IssueOneTests(unittest.TestCase):
         self.assertFalse(window.groups[0].isVisible())
         chat.click()
         self.assertEqual(window.stack.currentIndex(), 1)
+
+    def test_close_persists_draft_and_normalized_preferences_without_confirmation(self):
+        window = MainWindow(self.store)
+        window.show()
+        window.pages[1].input.setPlainText("重啟後仍有草稿")
+        window.navigate(SETTINGS_PAGE)
+        window.pages[SETTINGS_PAGE].model.setText("  fixture-id  ")
+        with patch.object(window, "confirm", side_effect=AssertionError("unexpected close confirmation")):
+            self.assertTrue(window.close())
+        reopened = MainWindow(Store(self.root))
+        self.addCleanup(reopened.close)
+        self.assertEqual(reopened.pages[1].input.toPlainText(), "重啟後仍有草稿")
+        reopened.navigate(SETTINGS_PAGE)
+        settings = reopened.pages[SETTINGS_PAGE]
+        self.assertEqual(settings.model.text(), "fixture-id")
+        settings.model.setText(" fixture-id ")
+        self.assertFalse(settings.has_unsaved_changes())
+        with patch.object(reopened.store, "save_settings", side_effect=AssertionError("unexpected write")), \
+                patch.object(reopened, "confirm", side_effect=AssertionError("unexpected close confirmation")):
+            self.assertTrue(reopened.close())
+
+    def test_failed_preferences_and_important_unsaved_pages_can_stop_close(self):
+        window = MainWindow(self.store)
+        self.addCleanup(window.close)
+        window.show()
+        window.navigate(SETTINGS_PAGE)
+        window.pages[SETTINGS_PAGE].model.setText("changed")
+        with patch.object(self.store, "save_settings", side_effect=sqlite3.OperationalError("read only")), \
+                patch.object(window, "show_error") as error:
+            self.assertFalse(window.close())
+            error.assert_called_once_with("read only")
+        with patch.object(window.pages[7], "has_unsaved_changes", return_value=True), \
+                patch.object(window, "confirm", return_value=False) as confirm:
+            self.assertFalse(window.close())
+            self.assertIn("記憶與狀態", confirm.call_args.args[1])
+        self.assertTrue(window.close())

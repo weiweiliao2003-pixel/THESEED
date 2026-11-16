@@ -29,7 +29,7 @@ Windows 發行 ZIP、編譯產物和私人工作區由本機或發行位置管�
 
 候選版自動偵測隨附的本機 whisper.cpp。直接點聊天框的麥克風即可試用，或從「＋ → 語音辨識設定」選擇麥克風、Windows zh-TW 或自訂工具。Windows zh-TW 反覆拒收時，選「自動」以使用已安裝的 whisper.cpp。自訂使用 [Windows x64 CPU 版 v1.8.6](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.8.6) 與[多語言 ggml-base-q5_1.bin](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin)。
 
-按麥克風開始，再按一次停止錄音。錄音上限 45 秒。辨識完成會顯示錄音裝置、辨識器、語言與信心。通過信心檢查的 whisper.cpp 逐字稿會在 Windows 轉為繁體中文，經確認或修正才加入草稿。錄音與辨識均在本機執行。
+按麥克風開始，再按一次停止錄音。錄音上限 45 秒。通過信心檢查的逐字稿直接存入錄音時的聊天草稿，可編輯或復原，由使用者決定何時送出。Windows 會將 whisper.cpp 逐字稿轉為繁體中文。錄音與辨識均在本機執行。
 
 ### Windows 候選版交付
 

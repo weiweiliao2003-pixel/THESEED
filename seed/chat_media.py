@@ -333,32 +333,34 @@ class ChatMedia(QObject):
             self.set_status(f"辨識失敗 · {engine}{result}{hint}")
             return
         previous = self.speech_slot
-        if not result.get("text"):
+        text = (result.get("text") or "").strip()[:10000]
+        if not text:
             self.set_status("已停止 · 本次未收到逐字稿。")
             return
-        descriptor = (f"麥克風 {result['microphone']}\n辨識器 {result.get('recognizer') or result['engine']}\n"
-                      f"語言 {result['voice']} · 辨識器信心 {result['confidence']:.0%}\n檢閱後按確定加入草稿。")
-        edited, accepted = QInputDialog.getMultiLineText(self.chat, "檢閱語音辨識", descriptor, result["text"])
-        text = edited.strip()[:10000] if accepted else ""
-        if not text:
-            self.set_status("已停止 · 草稿未加入語音文字。")
-            return
-        if previous == self.chat.selected():
-            cursor = self.chat.input.textCursor()
-            cursor.setPosition(cursor.position())
-            cursor.insertText((" " if cursor.position() else "") + text)
-            self.chat.perform(self.chat.save_draft)
-        else:
-            def save():
-                store = self.chat.store
-                if previous is None:
-                    former = store.preference("new_chat_draft", "")
-                    store.set_preference("new_chat_draft", (former + "\n" + text).strip())
-                else:
-                    store.write("""INSERT INTO conversation_drafts SELECT id,?,-1 FROM conversations WHERE id=?
-                        ON CONFLICT(conversation_id) DO UPDATE SET body=trim(body||char(10)||excluded.body)""", text, previous)
-            self.chat.perform(save)
-        self.set_status("已停止 · 逐字稿已加入草稿。")
+        visible_draft = previous == self.chat.selected() and (
+            previous is not None or not (self.chat.search.text().strip() or self.chat.archived))
+
+        def save():
+            store = self.chat.store
+            if visible_draft:
+                cursor = self.chat.input.textCursor()
+                cursor.clearSelection()
+                cursor.insertText((" " if cursor.position() else "") + text)
+                self.chat.input.setTextCursor(cursor)
+                self.chat.save_draft()
+            elif previous is None:
+                former = store.preference("new_chat_draft", "")
+                store.set_preference("new_chat_draft", (former + "\n" + text).strip())
+            else:
+                with store.connection() as db:
+                    changed = db.execute("""INSERT INTO conversation_drafts SELECT id,?,-1 FROM conversations WHERE id=?
+                        ON CONFLICT(conversation_id) DO UPDATE SET body=trim(body||char(10)||excluded.body)""", (text, previous))
+                    if not changed.rowcount:
+                        raise ValueError("錄音開始時的會話已刪除，逐字稿未加入其他草稿。")
+            location = "草稿，可直接編輯" if visible_draft else "原會話的草稿"
+            self.set_status(f"逐字稿已加入{location} · {result['engine']} · {result['voice']} · 信心 {result['confidence']:.0%}")
+
+        self.chat.perform(save)
 
     def shutdown(self):
         self.screen_timer.stop()
