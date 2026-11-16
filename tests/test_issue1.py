@@ -1,0 +1,181 @@
+import array
+import json
+import sqlite3
+import sys
+import unittest
+import wave
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
+from seed.build_info import LAUNCH_INFO, PREVIEW_MARKER, VERSION, runtime_info, verify_preview_workspace
+from seed.dictation import WHISPER_MODEL, audio_device, installed_whisper, local_wave, recognize_windows, select_backend, traditional_chinese, verify_parts
+from seed.metering import ResourceMeter
+from seed.store import Store
+from seed.theme import DEFAULT_SKIN
+from seed.window import MainWindow, SETTINGS_PAGE
+
+
+class IssueOneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        folder = TemporaryDirectory(prefix="theseed-issue1-test-")
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.store = Store(self.root)
+
+    def test_dictation_refuses_wrong_language_unreliable_or_unknown_confidence(self):
+        phrase = {"voice": "zh-TW", "text": "準確的測試文字", "confidence": .9}
+        self.assertEqual(verify_parts([phrase], "zh-TW", .54)["text"], phrase["text"])
+        for change in ({"voice": "en-US"}, {"confidence": .15}, {"confidence": None},
+                       {"confidence": float("nan")}, {"text": "a lower quality capture"}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                verify_parts([phrase | change], "zh-TW", .54)
+        with self.assertRaises(ValueError):
+            verify_parts([phrase, phrase | {"confidence": .2}], "zh-TW", .54)
+        with patch("seed.dictation.QMediaDevices.audioInputs", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "已選"):
+                audio_device("646576696365")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows Speech command")
+    def test_windows_requires_exact_locale(self):
+        with patch("seed.dictation.run_decoder", return_value=(1, b'{"error":"NO_ZH_TW_RECOGNIZER"}')) as run:
+            with self.assertRaisesRegex(ValueError, "zh-TW"):
+                recognize_windows(self.root / "fixture.wav", lambda: False)
+        self.assertIn(b'"strict_locale": true', run.call_args.kwargs["data"])
+
+    def test_installed_whisper_is_automatic_and_respects_explicit_engine(self):
+        self.assertEqual(select_backend({}, installed_whisper(self.root)), ("windows", ()))
+        bundled = self.root / "speech" / "whisper.cpp"
+        bundled.mkdir(parents=True)
+        cli, model = bundled / "whisper-cli.exe", bundled / WHISPER_MODEL
+        cli.touch()
+        self.assertIsNone(installed_whisper(self.root))
+        model.touch()
+        files = installed_whisper(self.root)
+        self.assertEqual(files, (cli.resolve(), model.resolve()))
+        self.assertEqual(select_backend({}, files), ("whisper", files))
+        self.assertEqual(select_backend({"backend": "windows"}, files), ("windows", ()))
+        with self.assertRaisesRegex(ValueError, "離線辨識器"):
+            select_backend({"backend": "whisper"}, None)
+        with self.assertRaises(ValueError):
+            select_backend({"backend": "whisper", "cli": "missing"}, files)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows Chinese mapping")
+    def test_whisper_text_converts_to_traditional_preserving_other_characters(self):
+        self.assertEqual(traditional_chinese("用电脑测试繁体语音，今天 9 點。🎧"), "用電腦測試繁體語音，今天 9 點。🎧")
+
+    def test_build_identity_and_isolation_proof_are_independent_of_git(self):
+        self.assertEqual(runtime_info().channel, "source")
+        with self.assertRaisesRegex(ValueError, "隔離試用"):
+            verify_preview_workspace(self.root)
+        (self.root / PREVIEW_MARKER).write_text("theseed-preview/1\n", encoding="utf-8")
+        verify_preview_workspace(self.root)
+        metadata = self.root / "build-info.json"
+        sha = "a123456" + "0" * 33
+        metadata.write_text(json.dumps({"version": VERSION, "commit": sha, "channel": "candidate"}), encoding="utf-8")
+        with patch("seed.build_info.sys.frozen", True, create=True), patch("seed.build_info.__file__", str(self.root / "build_info.py")):
+            build = runtime_info(isolated=True)
+            self.assertEqual(build.commit, sha)
+            self.assertIn("a123456", build.title)
+            self.assertEqual(build.workspace_label, "隔離試用工作區")
+            build.record_launch(self.root)
+            record = json.loads((self.root / LAUNCH_INFO).read_text(encoding="utf-8"))
+            self.assertEqual((record["workspace"], record["mode"], record["commit"]), (str(self.root.resolve()), "isolated", sha))
+            metadata.write_text('{"commit":"bogus"}', encoding="utf-8")
+            self.assertEqual(runtime_info().channel, "unverified")
+
+    def test_audio_pcm_conversion_rejects_silence_and_writes_mono_16khz(self):
+        recording = self.root / "synthetic.wav"
+        with self.assertRaisesRegex(ValueError, "沒有錄到"):
+            local_wave(recording, b"\0" * 32000, (16000, 1, False))
+        noisy = array.array("f", [.4, .2, .2, .4] * 12000).tobytes()
+        local_wave(recording, noisy, (48000, 2, True))
+        with wave.open(str(recording), "rb") as reader:
+            self.assertEqual((reader.getframerate(), reader.getnchannels(), reader.getsampwidth()), (16000, 1, 2))
+            self.assertEqual(reader.getnframes(), 8000)
+
+    def test_cost_boundaries_and_existing_incomplete_state(self):
+        meter = ResourceMeter(self.store)
+        base = date(2026, 6, 15)
+        entries = [(base, "0.015"), (base.replace(day=1), "0.025"), (base.replace(day=1) - timedelta(days=1), "60")]
+        with self.store.connection() as db:
+            for local, amount in entries:
+                stamp = datetime.combine(local, datetime.min.time()).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                uid = db.execute("""INSERT INTO model_call_usage(provider_id,kind,endpoint,model,stage,status,sent_at)
+                                    VALUES ('p','local','loopback','model','response','done',?)""", (stamp,)).lastrowid
+                db.execute("INSERT INTO api_call_costs VALUES (?,NULL,'USD',?,'{}','estimated')", (uid, amount))
+            failed_at = datetime.combine(base, datetime.min.time()).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            db.execute("""INSERT INTO model_call_usage(provider_id,kind,endpoint,model,stage,status,sent_at)
+                        VALUES ('p','local','loopback','model','response','failed',?)""", (failed_at,))
+        self.assertEqual(meter.estimated_since(base), ("USD 0.015000", True))
+        self.assertEqual(meter.estimated_since(base.replace(day=1)), ("USD 0.040000", True))
+
+    def test_navigation_has_heading_hierarchy_and_hover_only_marker(self):
+        window = MainWindow(self.store)
+        window.resize(1160, 667)
+        window.show()
+        self.addCleanup(window.close)
+        QTest.qWait(120)
+        chat = window.navigation[1]
+        self.assertTrue(chat.isChecked())
+        self.assertEqual(chat.focusPolicy(), Qt.FocusPolicy.TabFocus)
+        self.assertGreater(window.groups[0].font().pixelSize(), chat.font().pixelSize())
+        self.assertGreater(window.groups[0].font().weight(), chat.font().weight())
+        for skin in ("nebula", "obsidian"):
+            window.set_skin(DEFAULT_SKIN | {"theme": skin})
+            skin_sheet = QApplication.instance().styleSheet()
+            self.assertIn("QPushButton#navButton:hover", skin_sheet)
+            self.assertIn("QPushButton#navButton:focus { border-style: dashed", skin_sheet)
+            self.assertNotIn("QPushButton#navButton:checked", skin_sheet)
+            self.assertNotIn('navButton[collapsed="true"]:checked', skin_sheet)
+        window.collapsed = True
+        window.update_navigation()
+        self.assertTrue(chat.isVisible())
+        self.assertFalse(window.groups[0].isVisible())
+        chat.click()
+        self.assertEqual(window.stack.currentIndex(), 1)
+
+    def test_close_persists_draft_and_normalized_preferences_without_confirmation(self):
+        window = MainWindow(self.store)
+        window.show()
+        window.pages[1].input.setPlainText("重啟後仍有草稿")
+        window.navigate(SETTINGS_PAGE)
+        window.pages[SETTINGS_PAGE].model.setText("  fixture-id  ")
+        with patch.object(window, "confirm", side_effect=AssertionError("unexpected close confirmation")):
+            self.assertTrue(window.close())
+        reopened = MainWindow(Store(self.root))
+        self.addCleanup(reopened.close)
+        self.assertEqual(reopened.pages[1].input.toPlainText(), "重啟後仍有草稿")
+        reopened.navigate(SETTINGS_PAGE)
+        settings = reopened.pages[SETTINGS_PAGE]
+        self.assertEqual(settings.model.text(), "fixture-id")
+        settings.model.setText(" fixture-id ")
+        self.assertFalse(settings.has_unsaved_changes())
+        with patch.object(reopened.store, "save_settings", side_effect=AssertionError("unexpected write")), \
+                patch.object(reopened, "confirm", side_effect=AssertionError("unexpected close confirmation")):
+            self.assertTrue(reopened.close())
+
+    def test_failed_preferences_and_important_unsaved_pages_can_stop_close(self):
+        window = MainWindow(self.store)
+        self.addCleanup(window.close)
+        window.show()
+        window.navigate(SETTINGS_PAGE)
+        window.pages[SETTINGS_PAGE].model.setText("changed")
+        with patch.object(self.store, "save_settings", side_effect=sqlite3.OperationalError("read only")), \
+                patch.object(window, "show_error") as error:
+            self.assertFalse(window.close())
+            error.assert_called_once_with("read only")
+        with patch.object(window.pages[7], "has_unsaved_changes", return_value=True), \
+                patch.object(window, "confirm", return_value=False) as confirm:
+            self.assertFalse(window.close())
+            self.assertIn("記憶與狀態", confirm.call_args.args[1])
+        self.assertTrue(window.close())

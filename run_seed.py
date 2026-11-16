@@ -1,0 +1,71 @@
+"""Entry point for development and the Windows desktop bundle."""
+
+import argparse
+import os
+import platform
+import sqlite3
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QLockFile, QTimer, Qt
+from PySide6.QtNetwork import QSslSocket
+from PySide6.QtWidgets import QApplication, QMessageBox
+
+from seed import PRODUCT_NAME
+from seed.build_info import runtime_info, verify_preview_workspace
+from seed.store import Store
+from seed.window import MainWindow
+
+
+def main():
+    parser = argparse.ArgumentParser(description="SEED 種子桌面程式")
+    parser.add_argument("--version", action="version", version=runtime_info().title)
+    parser.add_argument("--data-root", type=Path, help="指定本機資料資料夾")
+    parser.add_argument("--isolated-workspace", action="store_true", help="開啟已標記的隔離試用工作區")
+    parser.add_argument("--native-titlebar", action="store_true", help="使用 Windows 原生視窗標題列")
+    args = parser.parse_args()
+    build = runtime_info(args.isolated_workspace)
+    if sys.platform == "win32":
+        os.environ.setdefault("QT_MEDIA_BACKEND", "windows")
+    app = QApplication([sys.argv[0]])
+    app.setApplicationName(PRODUCT_NAME)
+    app.setApplicationVersion(build.version)
+    app.setStyle("Fusion")
+    if sys.platform == "win32" and "schannel" in QSslSocket.availableBackends():
+        QSslSocket.setActiveBackend("schannel")
+
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+    data_root = args.data_root if args.data_root is not None else base / "Data"
+    try:
+        if sys.platform == "win32" and (platform.machine().upper() not in {"AMD64", "X86_64"}
+                                        or sys.getwindowsversion().build < 17763):
+            raise ValueError("Windows 版本不相容。請使用 Windows 10 1809 或更新版本（x64）。")
+        data_root = data_root.resolve()
+        if args.isolated_workspace:
+            verify_preview_workspace(data_root)
+        data_root.mkdir(parents=True, exist_ok=True)
+        lock = QLockFile(str(data_root / "seed.lock"))
+        lock.setStaleLockTime(0)
+        if not lock.tryLock(0):
+            raise ValueError("無法鎖定資料資料夾。請確認其他 SEED 視窗已關閉，且資料資料夾可寫入。")
+        window = MainWindow(Store(data_root), native_titlebar=args.native_titlebar, build=build)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        box = QMessageBox(QMessageBox.Icon.Critical, "SEED 無法啟動",
+                          f"{exc}\n\n資料資料夾：{data_root}", QMessageBox.StandardButton.Ok)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.exec()
+        return 1
+
+    window.show()
+    if build.isolated:
+        def record_ready():
+            try:
+                build.record_launch(data_root)
+            except OSError:
+                window.notice("無法寫入本機啟動確認。")
+        QTimer.singleShot(0, record_ready)
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
