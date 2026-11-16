@@ -121,7 +121,7 @@ class M0AcceptanceTests(unittest.TestCase):
         memory = self.navigate(7)
         memory.title.setText("測試記憶")
         memory.body.setPlainText("搜尋字串 [%]")
-        self.click(memory, "新增記憶")
+        self.click(memory, "儲存新記憶")
         memory.search.setText("[%]")
         self.assertEqual(memory.records.count(), 1)
         memory.search.setText("其他文字")

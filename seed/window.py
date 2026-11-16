@@ -1790,7 +1790,7 @@ class RecordEditor(Page):
         right.addWidget(self.body, 1)
         self.remove = action("刪除", self.delete_record)
         self.remove.setEnabled(False)
-        self.save_button = action("儲存", self.save_record, primary=True)
+        self.save_button = action("儲存新記憶" if table == "memories" else "儲存", self.save_record, primary=True)
         toolbar(right, self.save_button, self.remove)
         if table == "memories":
             self.origin = label("新增的記憶會標示為 Owner 手動建立。", "muted")
@@ -1881,7 +1881,7 @@ class RecordEditor(Page):
         self.body.setPlainText(self.saved_values[1])
         self.heading.setText(f"編輯{self.noun}" if rows else f"新增{self.noun}")
         if self.table == "memories":
-            self.save_button.setText("更正並儲存" if rows else "新增記憶")
+            self.save_button.setText("更正並儲存" if rows else "儲存新記憶")
             if rows:
                 sources = self.store.read("SELECT * FROM memory_evidence WHERE memory_id=? ORDER BY created_at,review_id", record_id)
                 manual = self.store.read("SELECT created_at FROM memory_revisions WHERE memory_id=? AND kind='manual' ORDER BY id LIMIT 1", record_id)
