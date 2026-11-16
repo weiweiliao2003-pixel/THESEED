@@ -1,4 +1,5 @@
 import array
+import json
 import sys
 import unittest
 import wave
@@ -11,7 +12,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from seed.dictation import audio_device, local_wave, recognize_windows, verify_parts
+from seed.build_info import LAUNCH_INFO, PREVIEW_MARKER, VERSION, runtime_info, verify_preview_workspace
+from seed.dictation import WHISPER_MODEL, audio_device, installed_whisper, local_wave, recognize_windows, select_backend, traditional_chinese, verify_parts
 from seed.metering import ResourceMeter
 from seed.store import Store
 from seed.theme import DEFAULT_SKIN
@@ -48,6 +50,47 @@ class IssueOneTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "zh-TW"):
                 recognize_windows(self.root / "fixture.wav", lambda: False)
         self.assertIn(b'"strict_locale": true', run.call_args.kwargs["data"])
+
+    def test_installed_whisper_is_automatic_and_respects_explicit_engine(self):
+        self.assertEqual(select_backend({}, installed_whisper(self.root)), ("windows", ()))
+        bundled = self.root / "speech" / "whisper.cpp"
+        bundled.mkdir(parents=True)
+        cli, model = bundled / "whisper-cli.exe", bundled / WHISPER_MODEL
+        cli.touch()
+        self.assertIsNone(installed_whisper(self.root))
+        model.touch()
+        files = installed_whisper(self.root)
+        self.assertEqual(files, (cli.resolve(), model.resolve()))
+        self.assertEqual(select_backend({}, files), ("whisper", files))
+        self.assertEqual(select_backend({"backend": "windows"}, files), ("windows", ()))
+        with self.assertRaisesRegex(ValueError, "離線辨識器"):
+            select_backend({"backend": "whisper"}, None)
+        with self.assertRaises(ValueError):
+            select_backend({"backend": "whisper", "cli": "missing"}, files)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows Chinese mapping")
+    def test_whisper_text_converts_to_traditional_preserving_other_characters(self):
+        self.assertEqual(traditional_chinese("用电脑测试繁体语音，今天 9 點。🎧"), "用電腦測試繁體語音，今天 9 點。🎧")
+
+    def test_build_identity_and_isolation_proof_are_independent_of_git(self):
+        self.assertEqual(runtime_info().channel, "source")
+        with self.assertRaisesRegex(ValueError, "隔離試用"):
+            verify_preview_workspace(self.root)
+        (self.root / PREVIEW_MARKER).write_text("theseed-preview/1\n", encoding="utf-8")
+        verify_preview_workspace(self.root)
+        metadata = self.root / "build-info.json"
+        sha = "a123456" + "0" * 33
+        metadata.write_text(json.dumps({"version": VERSION, "commit": sha, "channel": "candidate"}), encoding="utf-8")
+        with patch("seed.build_info.sys.frozen", True, create=True), patch("seed.build_info.__file__", str(self.root / "build_info.py")):
+            build = runtime_info(isolated=True)
+            self.assertEqual(build.commit, sha)
+            self.assertIn("a123456", build.title)
+            self.assertEqual(build.workspace_label, "隔離試用工作區")
+            build.record_launch(self.root)
+            record = json.loads((self.root / LAUNCH_INFO).read_text(encoding="utf-8"))
+            self.assertEqual((record["workspace"], record["mode"], record["commit"]), (str(self.root.resolve()), "isolated", sha))
+            metadata.write_text('{"commit":"bogus"}', encoding="utf-8")
+            self.assertEqual(runtime_info().channel, "unverified")
 
     def test_audio_pcm_conversion_rejects_silence_and_writes_mono_16khz(self):
         recording = self.root / "synthetic.wav"

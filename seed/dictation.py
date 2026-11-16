@@ -4,6 +4,7 @@ import array
 import json
 import math
 import subprocess
+import sys
 import time
 import wave
 from pathlib import Path
@@ -20,6 +21,7 @@ MAX_SECONDS = 45
 WINDOWS_MIN_CONFIDENCE = .54
 WHISPER_MIN_CONFIDENCE = .60
 BACKENDS = {"windows": "Windows Speech · zh-TW", "whisper": "whisper.cpp · 中文（zh）"}
+WHISPER_MODEL = "ggml-base-q5_1.bin"
 
 
 def audio_device(saved):
@@ -141,6 +143,50 @@ def whisper_paths(executable, weights):
     return cli.resolve(), model.resolve()
 
 
+def installed_whisper(base=None):
+    if base is None:
+        base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+    folder = base / "speech" / "whisper.cpp"
+    try:
+        return whisper_paths(folder / "whisper-cli.exe", folder / WHISPER_MODEL)
+    except ValueError:
+        return None
+
+
+def select_backend(settings, installed):
+    choice = settings.get("backend", "auto") if isinstance(settings, dict) else None
+    if not isinstance(choice, str) or choice not in {"auto", *BACKENDS}:
+        raise ValueError("辨識器設定無法讀取，請從「＋ → 語音辨識設定」重新選擇。")
+    if choice == "auto" and installed:
+        return "whisper", installed
+    if choice == "whisper":
+        if settings.get("cli") or settings.get("model"):
+            return "whisper", whisper_paths(settings.get("cli") or "", settings.get("model") or "")
+        if installed:
+            return "whisper", installed
+        raise ValueError("找不到離線辨識器，請從「＋ → 語音辨識設定」選擇工具及模型。")
+    return "windows", ()
+
+
+def traditional_chinese(text):
+    if sys.platform != "win32":
+        return text
+    from ctypes import WinDLL, create_unicode_buffer, wintypes
+
+    transform = WinDLL("kernel32", use_last_error=True).LCMapStringEx
+    transform.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.LPCWSTR, wintypes.INT,
+                          wintypes.LPWSTR, wintypes.INT, wintypes.LPVOID, wintypes.LPVOID, wintypes.LPARAM]
+    transform.restype = wintypes.INT
+    flags = 0x04000000  # LCMAP_TRADITIONAL_CHINESE
+    count = transform("zh-TW", flags, text, -1, None, 0, None, None, 0)
+    if not count:
+        raise ValueError("Windows 無法將逐字稿轉為繁體中文。")
+    converted = create_unicode_buffer(count)
+    if not transform("zh-TW", flags, text, -1, converted, count, None, None, 0):
+        raise ValueError("Windows 無法將逐字稿轉為繁體中文。")
+    return converted.value
+
+
 def recognize_whisper(path, cancel, executable, weights):
     cli, model = whisper_paths(executable, weights)
     output = path.with_name("transcript")
@@ -158,7 +204,8 @@ def recognize_whisper(path, cancel, executable, weights):
                   if token.get("text", "").strip() and not token["text"].startswith("[_")]
         score = sum(scores) / len(scores) if scores and all(type(p) in (int, float) and 0 <= p <= 1 for p in scores) else None
         parts.append({"text": segment["text"], "voice": language, "confidence": score})
-    return verify_parts(parts, "zh", WHISPER_MIN_CONFIDENCE)
+    verified = verify_parts(parts, "zh", WHISPER_MIN_CONFIDENCE)
+    return verified | {"text": traditional_chinese(verified["text"])}
 
 
 class DecodeJob(QThread):

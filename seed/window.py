@@ -21,7 +21,8 @@ from PySide6.QtWidgets import (
     QSizePolicy, QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from seed import BUILD_REVISION, PRODUCT_NAME, __version__
+from seed import PRODUCT_NAME
+from seed.build_info import runtime_info
 from seed import chat_queue
 from seed.attachments import asset_file, clear_draft, link_message, sent_ids, slot_for
 from seed.chat_media import ChatMedia
@@ -2270,11 +2271,18 @@ class Settings(Page):
         self.layout.addWidget(panel)
 
         panel, layout = card()
-        layout.addWidget(label("本機資料", "sectionTitle"))
+        layout.addWidget(label(f"關於 {PRODUCT_NAME}", "sectionTitle"))
+        build = window.build
+        layout.addWidget(label(build.title, "body"))
+        if build.commit:
+            commit = label(f"Commit {build.commit}", "path")
+            commit.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(commit)
+        layout.addWidget(label(build.workspace_label, "muted"))
         data_root = label(str(self.store.root), "path")
         data_root.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(data_root)
-        layout.addWidget(label(f"關於 {PRODUCT_NAME} · {__version__} {BUILD_REVISION}  ·  Python {sys.version.split()[0]}  ·  "
+        layout.addWidget(label(f"Python {sys.version.split()[0]}  ·  "
                                f"Qt {qVersion()}  ·  SQLite {sqlite3.sqlite_version}", "muted"))
         self.layout.addWidget(panel)
         self.layout.addStretch()
@@ -2399,7 +2407,7 @@ class Settings(Page):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, store: Store, *, native_titlebar=False):
+    def __init__(self, store: Store, *, native_titlebar=False, build=None):
         super().__init__()
         self.custom_frame = sys.platform == "win32" and not native_titlebar
         if self.custom_frame:
@@ -2407,6 +2415,7 @@ class MainWindow(QMainWindow):
                                 Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowSystemMenuHint)
         self.closing = False
         self.store = store
+        self.build = build if build is not None else runtime_info()
         self.state = WorkspaceState(store)
         self.journal = ExperienceJournal(store)
         self.context_composer = ContextComposer(store)

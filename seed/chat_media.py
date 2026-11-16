@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QInputDial
 
 from seed.attachments import MAX_FILES, Attachments, asset_file, slot_for
 from seed.perception import CameraSnapshot, encode_image
-from seed.dictation import BACKENDS, DictationSession, audio_device, whisper_paths
+from seed.dictation import BACKENDS, DictationSession, audio_device, installed_whisper, select_backend, whisper_paths
 from seed.video import FORMATS, tool_pair
 
 
@@ -248,14 +248,10 @@ class ChatMedia(QObject):
             return
         store = self.chat.store
         settings = store.preference("dictation_settings", {})
-        if not isinstance(settings, dict) or settings.get("backend", "windows") not in BACKENDS:
-            self.set_status("辨識器設定無法讀取，請從「＋」重新選擇。")
-            return
-        backend = settings.get("backend", "windows")
         session = None
         try:
+            backend, paths = select_backend(settings, installed_whisper())
             device = audio_device(settings.get("microphone"))
-            paths = whisper_paths(settings.get("cli", ""), settings.get("model", "")) if backend == "whisper" else ()
             session = DictationSession(device, backend, paths, self)
             self.speech = session
             self.speech_slot = self.chat.selected()
@@ -290,13 +286,23 @@ class ChatMedia(QObject):
         name, ok = QInputDialog.getItem(self.chat, "語音辨識設定", "選擇錄音裝置", list(microphones), selected, False)
         if not ok:
             return
-        selected = int(settings.get("backend") == "whisper")
-        engine, ok = QInputDialog.getItem(self.chat, "語音辨識設定", "選擇離線辨識器", list(BACKENDS.values()), selected, False)
+        installed = installed_whisper()
+        detected = BACKENDS["whisper"] if installed else BACKENDS["windows"]
+        engines = {"auto": f"自動 · {detected}", "windows": BACKENDS["windows"]}
+        if installed:
+            engines["installed"] = "whisper.cpp · 使用已安裝模型"
+        engines["whisper"] = "whisper.cpp · 自訂工具與模型"
+        choice = settings.get("backend", "auto")
+        if installed and choice == "whisper" and not settings.get("cli") and not settings.get("model"):
+            choice = "installed"
+        selected = next((i for i, key in enumerate(engines) if key == choice), 0)
+        engine, ok = QInputDialog.getItem(self.chat, "語音辨識設定", "選擇離線辨識器", list(engines.values()), selected, False)
         if not ok:
             return
-        backend = next(key for key, label in BACKENDS.items() if label == engine)
+        choice = next(key for key, label in engines.items() if label == engine)
+        backend = "whisper" if choice == "installed" else choice
         updates = settings | {"backend": backend, "microphone": microphones[name]}
-        if backend == "whisper":
+        if choice == "whisper":
             cli, _ = QFileDialog.getOpenFileName(self.chat, "選擇 whisper-cli.exe", settings.get("cli", ""), "工具 (whisper-cli.exe)")
             if not cli:
                 return
@@ -305,18 +311,26 @@ class ChatMedia(QObject):
                 return
             whisper_paths(cli, model)
             updates |= {"cli": cli, "model": model}
+        elif choice == "installed":
+            updates |= {"cli": "", "model": ""}
         store.set_preference("dictation_settings", updates)
         self.set_status(f"已選擇 {name} · {engine}")
 
     @Slot(bool, object)
     def voice_result(self, ok, result):
+        backend = self.speech.backend if isinstance(self.speech, DictationSession) else None
         self.speech = None
         self.chat.microphone.setToolTip("開始語音辨識")
         self.chat.microphone.setAccessibleName("開始語音辨識")
         if self.chat.window.closing:
             return
         if not ok:
-            self.set_status(str(result) if str(result) == "已停止。" else "辨識失敗 · " + str(result))
+            if str(result) == "已停止。":
+                self.set_status(str(result))
+                return
+            hint = " 已安裝 whisper.cpp，可從「＋ → 語音辨識設定」切到自動。" if backend == "windows" and installed_whisper() else ""
+            engine = f"{BACKENDS[backend]} · " if backend else ""
+            self.set_status(f"辨識失敗 · {engine}{result}{hint}")
             return
         previous = self.speech_slot
         if not result.get("text"):

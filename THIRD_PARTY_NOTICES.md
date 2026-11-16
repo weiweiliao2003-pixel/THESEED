@@ -21,6 +21,6 @@ SEED Windows 桌面包包含以下第三方運行元件。Qt 與 Python 繫結�
 
 影片抽樣可使用獨立安裝的 FFmpeg。已測試 [Gyan 專案的 FFmpeg 9.0.2 Essentials（GPLv3）](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2)。該工具二進位在發行 ZIP 外獨立配置。
 
-語音辨識可選用本機的 [whisper.cpp v1.8.6（MIT）](https://github.com/ggml-org/whisper.cpp/blob/v1.8.6/LICENSE) 與相容的多語言模型。[OpenAI Whisper 模型及授權](https://github.com/openai/whisper#license) · [whisper.cpp 轉換模型](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1)。官方工具、模型權重及測試音訊由本機獨立配置。
+候選 Windows 包可在 `speech/whisper.cpp` 附帶 [whisper.cpp v1.8.6（MIT）](https://github.com/ggml-org/whisper.cpp/blob/v1.8.6/LICENSE) 的官方 x64 CPU 工具與 [ggml-base-q5_1 多語言模型](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1)。授權附於 `licenses/WhisperCpp-MIT.txt` 與 `licenses/Whisper-Weights-MIT.txt`。[OpenAI Whisper 模型及授權](https://github.com/openai/whisper#license)。
 
 封裝亦攜帶 CPython 所用的 Microsoft Visual C++ 執行元件。這些元件隨 Python 的 Windows 發行包提供。REA、Ghidra、Hopper 和 AI 模型皆由各自的提供者獨立發行，SEED M0 只探測 PATH 上的工具。

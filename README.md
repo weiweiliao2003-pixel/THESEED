@@ -27,9 +27,20 @@ Windows 發行 ZIP、編譯產物和私人工作區由本機或發行位置管�
 
 ## 繁中語音辨識
 
-從「＋ → 語音辨識設定」選擇麥克風和本機辨識器。Windows Speech 需要 zh-TW 辨識器。使用 whisper.cpp 時，解壓 [Windows x64 CPU 版 v1.8.6](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.8.6)，保留工具內的 DLL，並選取 whisper-cli.exe 及[多語言 ggml-base-q5_1.bin](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin)。模型大小約 60 MB，適合先在舊電腦試用。工具和模型由使用者獨立安裝。
+候選版自動偵測隨附的本機 whisper.cpp。直接點聊天框的麥克風即可試用，或從「＋ → 語音辨識設定」選擇麥克風、Windows zh-TW 或自訂工具。Windows zh-TW 反覆拒收時，選「自動」以使用已安裝的 whisper.cpp。自訂使用 [Windows x64 CPU 版 v1.8.6](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.8.6) 與[多語言 ggml-base-q5_1.bin](https://huggingface.co/ggerganov/whisper.cpp/blob/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin)。
 
-按麥克風開始，再按一次停止錄音。錄音上限 45 秒。可用結果會顯示實際錄音裝置、辨識器、語言與信心，檢閱或修正後才加入草稿。低信心、裝置失效、沒有足夠音訊或辨識器不相容時會提示重試。whisper.cpp 使用中文模型，字形與用詞仍需檢閱。
+按麥克風開始，再按一次停止錄音。錄音上限 45 秒。辨識完成會顯示錄音裝置、辨識器、語言與信心。通過信心檢查的 whisper.cpp 逐字稿會在 Windows 轉為繁體中文，經確認或修正才加入草稿。錄音與辨識均在本機執行。
+
+### Windows 候選版交付
+
+用已推送至 PR 的乾淨 Commit 建置。傳入已下載的官方 x64 CPU ZIP 與多語言模型；建置會核對固定 SHA-256，並在封裝內寫入這次的完整 Git SHA。發行產物與模型留在本機。
+
+~~~powershell
+.\build-windows.ps1 -OutputDirectory dist\preview -SkipArchive -WhisperArchive <zip> -WhisperModel <bin>
+.\publish-preview.ps1 -InstallRoot D:\TheSeed -Bundle dist\preview\SEED -Commit (git rev-parse HEAD)
+~~~
+
+交付指令先在獨立目錄檢查候選啟動，再備份原工作區、更新根目錄 `SEED.lnk`，並從捷徑啟動核對。候選版使用新建的隔離工作區。從「設定與備份 → 關於 THESEED」查看建置版本、Commit 和資料路徑。要復原日常入口，用 `publish-preview.ps1 -InstallRoot D:\TheSeed -RestoreShortcut <候選目錄>\rollback\SEED-Previous.lnk`，會以原捷徑的工作區開啟上一版。
 
 ## 隱私
 
