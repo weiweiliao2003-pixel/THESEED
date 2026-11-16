@@ -44,32 +44,54 @@ class TrendingRepositories(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.article = False
         self.heading = False
-        self.repositories = []
+        self.projects = []
+        self.project = None
+        self.field = self.end_field = ""
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
         if tag == "article":
             self.article = "Box-row" in attributes.get("class", "").split()
+            self.project = {} if self.article else None
         elif tag == "h2" and self.article:
             self.heading = True
         elif tag == "a" and self.heading:
             path = attributes.get("href", "").removeprefix("/")
-            if REPOSITORY.fullmatch(path) and path not in self.repositories:
-                self.repositories.append(path)
+            if REPOSITORY.fullmatch(path):
+                self.project.setdefault("name", path)
+        elif self.article and tag == "p":
+            self.field, self.end_field = "description", tag
+        elif self.article and attributes.get("itemprop") == "programmingLanguage":
+            self.field, self.end_field = "language", tag
+        elif self.article and tag == "a" and attributes.get("href", "").endswith("/stargazers"):
+            self.field, self.end_field = "stars", tag
+
+    def handle_data(self, value):
+        if self.project is not None and self.field:
+            self.project[self.field] = self.project.get(self.field, "") + value
 
     def handle_endtag(self, tag):
+        if tag == self.end_field:
+            self.field = self.end_field = ""
         if tag in {"article", "h2"}:
             self.heading = False
         if tag == "article":
+            if self.project and self.project.get("name") and not any(row["name"] == self.project["name"] for row in self.projects):
+                self.projects.append({key: " ".join(value.split()) for key, value in self.project.items()})
+            self.project = None
             self.article = False
 
 
-def trending_repositories(raw):
+def trending_projects(raw):
     parser = TrendingRepositories()
     parser.feed(raw.decode("utf-8"))
-    if not parser.repositories:
+    if not parser.projects:
         raise ValueError("GitHub Trending 網頁沒有可辨識的排行資料。")
-    return parser.repositories[:25]
+    return parser.projects[:25]
+
+
+def trending_repositories(raw):
+    return [row["name"] for row in trending_projects(raw)]
 
 
 def document_url(value):
@@ -138,7 +160,7 @@ class PublicRead(QObject):
         code = self.reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0
         error = self.reason
         if not error and code != 200:
-            error = {403: "來源拒絕存取或已達 GitHub 限額。", 429: "來源請求過多，稍後再試。",
+            error = {403: "來源拒絕存取或已達請求限額。", 429: "來源請求過多，稍後再試。",
                      404: "找不到來源。"}.get(code, f"來源回傳 HTTP {code}。" if code else "無法連線至來源。")
         if not error and self.reply.error() != QNetworkReply.NetworkError.NoError:
             error = "來源連線在讀取期間中斷。"
