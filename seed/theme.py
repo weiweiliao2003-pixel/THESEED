@@ -44,6 +44,7 @@ QScrollArea#navScroll QScrollBar::add-line:vertical, QScrollArea#navScroll QScro
     height: 0; background: transparent;
 }
 QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 700; padding: @nav_gap 10px 6px; }
+QLabel#navGroup[currentGroup="true"] { color: @nav_marker; border-bottom: 2px solid @nav_marker; }
 QFrame#navDivider { background: @nav_divider; max-height: 1px; }
 QPushButton#navButton {
     background: transparent; color: #b5cbd5; text-align: left; font-size: @nav_item; font-weight: 400;
@@ -52,6 +53,8 @@ QPushButton#navButton {
 QPushButton#navButton[collapsed="true"] { text-align: center; padding: 0; }
 QPushButton#navButton:focus { border-style: dashed; border-color: @nav_focus; border-left-color: transparent; }
 QPushButton#navButton:hover { color: #f6fbfd; background: #214556; border-left-color: @nav_marker; }
+QPushButton#navButton[currentLocation="true"] { border-bottom: 2px solid @nav_marker; }
+QLabel#pageLocation { color: #496270; padding: 5px 18px 3px; font-size: 12px; }
 QFrame#resourceBlock { background: #ffffff; border: 1px solid #d7e2e7; border-radius: 8px; }
 QLabel#resourceTitle { font-size: 17px; font-weight: 700; }
 QLabel#resourceMetric { font-size: 15px; font-weight: 700; }

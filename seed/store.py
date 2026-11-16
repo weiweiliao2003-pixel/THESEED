@@ -10,7 +10,7 @@ from tempfile import NamedTemporaryFile
 from seed.retrieval import ensure_index
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 SETTINGS_SCHEMA = "seed.settings/1"
 DEFAULT_SETTINGS = {"provider": "none", "model": ""}
 PROVIDERS = {"none": "未設定", "openai": "OpenAI", "gemini": "Gemini", "local": "本機模型"}
@@ -321,6 +321,21 @@ COMMIT;
 """
 
 
+MEMORY_REVISION_SCHEMA = """
+BEGIN IMMEDIATE;
+CREATE TABLE memory_revisions (
+    id INTEGER PRIMARY KEY, memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('manual','correction')), reason TEXT NOT NULL,
+    before_title TEXT NOT NULL DEFAULT '', before_body TEXT NOT NULL DEFAULT '',
+    after_title TEXT NOT NULL DEFAULT '', after_body TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX memory_revisions_memory ON memory_revisions(memory_id,id);
+PRAGMA user_version=9;
+COMMIT;
+"""
+
+
 class Store:
     def __init__(self, root: Path):
         self.root = root.resolve()
@@ -367,6 +382,11 @@ class Store:
                     self.pre_upgrade_backup(db, "seed.before-v8.sqlite3")
                 db.executescript(ATTACHMENT_SCHEMA)
                 version = 8
+            if version == 8:
+                if not new_database:
+                    self.pre_upgrade_backup(db, "seed.before-v9.sqlite3")
+                db.executescript(MEMORY_REVISION_SCHEMA)
+                version = 9
             if version != SCHEMA_VERSION:
                 raise ValueError(f"資料庫版本 {version} 與目前的 SEED 不相容。")
             db.execute("PRAGMA journal_mode = WAL")

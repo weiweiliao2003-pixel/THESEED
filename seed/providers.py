@@ -6,6 +6,7 @@ import logging
 import re
 import sqlite3
 import uuid
+from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
@@ -184,11 +185,13 @@ class ProviderService:
         if not isinstance(listing, dict):
             raise ValueError("無法讀取模型清單。")
         models = {}
+        observed = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for item in listing.get("models" if kind == "gemini" else "data", [])[:200]:
             if not isinstance(item, dict):
                 continue
             if kind == "gemini":
-                if "generateContent" not in item.get("supportedGenerationMethods", []):
+                methods = item.get("supportedGenerationMethods")
+                if not isinstance(methods, list) or "generateContent" not in methods:
                     continue
                 raw_name = item.get("name")
                 name = raw_name.removeprefix("models/") if isinstance(raw_name, str) else ""
@@ -211,10 +214,11 @@ class ProviderService:
             capabilities = ["text_generation"] if kind == "gemini" else []
             if isinstance(modalities, list) and "image" in modalities:
                 capabilities.append("image_input")
-            models[name] = {"input_tokens": limit if type(limit) is int and 2048 <= limit <= 10_000_000 else None,
+            models[name] = {"input_tokens": limit if type(limit) is int and 512 <= limit <= 10_000_000 else None,
                             "output_tokens": output if type(output) is int and 1 <= output <= 1_000_000 else None,
                             "capabilities": capabilities,
-                            "source": "provider-model-list"}
+                            "source": "provider-model-list", "observed_at": observed,
+                            "input_only": kind == "gemini"}
         return models
 
     def add_service(self, kind, base_url, secret, models):

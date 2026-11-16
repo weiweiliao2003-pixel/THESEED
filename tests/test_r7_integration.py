@@ -17,7 +17,7 @@ from seed.metering import ResourceMeter, usage_fields
 from seed.providers import ProviderService, TextRequest
 from seed.retrieval import correct_memory_sources
 from seed.state import WorkspaceState
-from seed.store import Store
+from seed.store import SCHEMA_VERSION, Store
 from seed.window import MainWindow
 from test_workspace import fixture_server, profile
 
@@ -149,7 +149,7 @@ class R7Tests(unittest.TestCase):
     def test_v6_upgrade_snapshot_and_portable_round_trip(self):
         legacy = self.root / "v6"
         legacy.mkdir()
-        names = ("attachment_drafts", "message_attachments", "attachments",
+        names = ("memory_revisions", "attachment_drafts", "message_attachments", "attachments",
                  "model_call_usage", "api_quota_snapshots", "api_call_costs", "api_price_versions",
                  "emotion_observations", "topic_summaries", "context_source_exclusions", "research_evidence")
         with closing(sqlite3.connect(legacy / "seed.sqlite3")) as db, self.store.connection() as original:
@@ -161,7 +161,7 @@ class R7Tests(unittest.TestCase):
             db.execute("INSERT INTO conversations(title) VALUES ('v6 retained')")
             db.commit()
         migrated = Store(legacy)
-        self.assertEqual(migrated.read("PRAGMA user_version")[0][0], 8)
+        self.assertEqual(migrated.read("PRAGMA user_version")[0][0], SCHEMA_VERSION)
         with closing(sqlite3.connect(legacy / "seed.before-v7.sqlite3")) as backup:
             self.assertEqual(backup.execute("PRAGMA user_version").fetchone()[0], 6)
             self.assertEqual(backup.execute("SELECT title FROM conversations").fetchone()[0], "v6 retained")

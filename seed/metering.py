@@ -160,6 +160,12 @@ class ResourceMeter(QObject):
             FROM api_price_versions p ORDER BY p.id DESC LIMIT 1""")
         return rows[0] if rows else None
 
+    def model_rate(self, kind, endpoint, model):
+        rows = self.store.read("""SELECT * FROM api_price_versions
+            WHERE kind=? AND endpoint=? AND model=? AND effective_from<=CURRENT_TIMESTAMP
+            ORDER BY effective_from DESC,id DESC LIMIT 1""", kind, endpoint, model)
+        return rows[0] if rows else None
+
     def quota(self, row):
         if not row:
             return "待供應商確認"

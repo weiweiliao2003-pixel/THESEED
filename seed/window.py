@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QSize, QThread, QTimer, Qt, Signal, Slot, qVersion
 from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut, QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QComboBox, QFileDialog, QFormLayout, QFrame,
+    QAbstractItemView, QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QLayout,
     QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
@@ -31,6 +31,7 @@ from seed.context import ContextComposer
 from seed.context_budget import FALLBACK, for_profile
 from seed.experience import ExperienceJournal, append_message
 from seed.growth import record_verification
+from seed.input_fields import FocusHintEdit
 from seed.personality import DRAFT_KEY, next_profile_version, profile_description
 from seed.policy import POLICIES, policies, update_policies
 from seed.providers import ProviderService
@@ -204,7 +205,7 @@ class Conversations(Page):
         create.setToolTip("新增會話")
         header.addWidget(create)
         left.addLayout(header)
-        self.search = QLineEdit(placeholderText="搜尋對話、訊息與話題")
+        self.search = FocusHintEdit("搜尋對話、訊息與話題")
         self.search.setAccessibleName("搜尋會話和訊息")
         self.search.textChanged.connect(self.filter_sessions)
         left.addWidget(self.search)
@@ -1763,7 +1764,7 @@ class RecordEditor(Page):
         self.saved_values = ("", "")
         left_widget, left = card()
         left.addWidget(action(f"新增{noun}", self.new_record, primary=True))
-        self.search = QLineEdit(placeholderText=f"搜尋{noun}")
+        self.search = FocusHintEdit(f"搜尋{noun}")
         if searchable:
             left.addWidget(self.search)
             self.search.textChanged.connect(lambda: self.perform(self.populate))
@@ -1774,18 +1775,28 @@ class RecordEditor(Page):
         right_widget, right = card()
         self.heading = label(f"新增{noun}", "sectionTitle")
         right.addWidget(self.heading)
-        self.title = QLineEdit(placeholderText="標題")
+        self.title = QLineEdit()
         self.title.setAccessibleName(f"{noun}標題")
         self.title.setMaxLength(160)
+        title_label = label("標題")
+        title_label.setBuddy(self.title)
+        right.addWidget(title_label)
         right.addWidget(self.title)
-        self.body = QPlainTextEdit(placeholderText="輸入內容…")
+        self.body = QPlainTextEdit()
         self.body.setAccessibleName(f"{noun}內容")
+        body_label = label("目前採信內容" if table == "memories" else "內容")
+        body_label.setBuddy(self.body)
+        right.addWidget(body_label)
         right.addWidget(self.body, 1)
         self.remove = action("刪除", self.delete_record)
         self.remove.setEnabled(False)
-        toolbar(right, action("儲存", self.save_record, primary=True), self.remove)
+        self.save_button = action("儲存新記憶" if table == "memories" else "儲存", self.save_record, primary=True)
+        toolbar(right, self.save_button, self.remove)
         if table == "memories":
-            toolbar(right, action("檢視記憶來源", self.memory_source), action("經歷時間線", lambda: window.navigate(14)))
+            self.origin = label("新增的記憶會標示為 Owner 手動建立。", "muted")
+            right.insertWidget(1, self.origin)
+            toolbar(right, action("檢視記憶來源", self.memory_source), action("更正紀錄", self.memory_revisions),
+                    action("經歷時間線", lambda: window.navigate(14)))
         split = QSplitter(Qt.Orientation.Horizontal)
         split.addWidget(left_widget)
         split.addWidget(right_widget)
@@ -1814,7 +1825,7 @@ class RecordEditor(Page):
             return
         rows = self.store.read("SELECT review_id,event_id FROM memory_evidence WHERE memory_id=?", self.record_id)
         if not rows:
-            self.window.notice("這筆記憶沒有記錄可追溯的來源。")
+            self.window.notice("請查看記憶上方的建立來源。這筆記憶沒有連結到對話或經歷。")
             return
         row = rows[0]
         source = self.window.journal.source(row["event_id"], self.window.state.get_identity()["identity_id"])
@@ -1824,6 +1835,28 @@ class RecordEditor(Page):
             self.window.info("記憶來源", f"審核 #{row['review_id']} · 經歷 #{source['id']}\n{source['source_label']}\n\n{source['content']}")
         else:
             self.window.info("記憶來源", f"審核 #{row['review_id']}\n原始訊息無法查閱。")
+
+    def memory_revisions(self):
+        if self.record_id is None:
+            self.window.notice("請先選擇一筆已儲存的記憶。")
+            return
+        rows = self.store.read("SELECT * FROM memory_revisions WHERE memory_id=? AND kind='correction' ORDER BY id DESC", self.record_id)
+        dialog = QDialog(self, windowTitle="記憶更正紀錄")
+        dialog.resize(660, 480)
+        layout = QVBoxLayout(dialog)
+        history = QPlainTextEdit(readOnly=True)
+        history.setPlainText("\n\n────────\n\n".join(
+            f"{row['created_at']} UTC · {row['reason']}\n\n更正前\n{row['before_title']}\n{row['before_body']}\n\n"
+            f"更正後\n{row['after_title']}\n{row['after_body']}" for row in rows) if rows else "目前沒有更正紀錄。")
+        layout.addWidget(history, 1)
+        def purge():
+            if self.window.confirm("清除更正紀錄", "清除這筆記憶的過往版本。保留目前採信內容及原始來源。"):
+                self.store.write("DELETE FROM memory_revisions WHERE memory_id=? AND kind='correction'", self.record_id)
+                dialog.accept()
+        remove_history = action("清除更正紀錄", lambda: self.perform(purge))
+        remove_history.setEnabled(bool(rows))
+        toolbar(layout, remove_history, action("關閉", dialog.accept))
+        dialog.exec()
 
     def refresh(self):
         self.populate()
@@ -1841,12 +1874,28 @@ class RecordEditor(Page):
         return not self.has_unsaved_changes() or self.window.confirm("捨棄草稿", "捨棄尚未儲存的變更？")
 
     def load(self, record_id):
-        rows = self.store.read(f"SELECT title, body FROM {self.table} WHERE id = ?", record_id)
+        rows = self.store.read(f"SELECT title, body, updated_at FROM {self.table} WHERE id = ?", record_id)
         self.record_id = record_id if rows else None
-        self.saved_values = tuple(rows[0]) if rows else ("", "")
+        self.saved_values = (rows[0]["title"], rows[0]["body"]) if rows else ("", "")
         self.title.setText(self.saved_values[0])
         self.body.setPlainText(self.saved_values[1])
         self.heading.setText(f"編輯{self.noun}" if rows else f"新增{self.noun}")
+        if self.table == "memories":
+            self.save_button.setText("更正並儲存" if rows else "儲存新記憶")
+            if rows:
+                sources = self.store.read("SELECT * FROM memory_evidence WHERE memory_id=? ORDER BY created_at,review_id", record_id)
+                manual = self.store.read("SELECT created_at FROM memory_revisions WHERE memory_id=? AND kind='manual' ORDER BY id LIMIT 1", record_id)
+                if sources:
+                    source = sources[0]
+                    event = f" · 經歷 #{source['event_id']}" if source["event_id"] else ""
+                    provenance = f"採用審核 #{source['review_id']}{event} · 擷取／採用時間 {source['created_at']} UTC"
+                elif manual:
+                    provenance = f"Owner 手動建立 · {manual[0]['created_at']} UTC"
+                else:
+                    provenance = "舊記憶 · 建立來源未記錄"
+                self.origin.setText(f"{provenance}\n最後更新 {rows[0]['updated_at']} UTC")
+            else:
+                self.origin.setText("新增的記憶會標示為 Owner 手動建立。")
         self.remove.setEnabled(bool(rows))
         self.populate()
 
@@ -1871,6 +1920,18 @@ class RecordEditor(Page):
         if not title or not body:
             self.window.show_error("請輸入標題和內容。")
             return
+        reason = ""
+        if self.table == "memories" and self.record_id is not None:
+            if (title, body) == self.saved_values:
+                self.load(self.record_id)
+                return
+            reason, ok = QInputDialog.getText(self, "更正記憶", "更正原因（只保存在此工作區）")
+            reason = reason.strip()
+            if not ok:
+                return
+            if not reason or len(reason) > 400:
+                self.window.show_error("請輸入 1–400 字的更正原因。")
+                return
 
         def save():
             with self.store.connection() as db:
@@ -1885,7 +1946,11 @@ class RecordEditor(Page):
                     if result.rowcount != 1:
                         raise ValueError("這筆資料已由其他視窗變更。請重新選取紀錄後再編輯。")
                 if self.table == "memories":
-                    if self.record_id is not None and self.saved_values != (title, body):
+                    if self.record_id is None:
+                        db.execute("INSERT INTO memory_revisions(memory_id,kind,reason) VALUES (?,'manual','Owner 手動建立')", (record_id,))
+                    else:
+                        db.execute("""INSERT INTO memory_revisions(memory_id,kind,reason,before_title,before_body,after_title,after_body)
+                                   VALUES (?,'correction',?,?,?,?,?)""", (record_id, reason, *self.saved_values, title, body))
                         correct_memory_sources(db, record_id)
                     index_memory(db, record_id)
             self.load(record_id)
@@ -2540,8 +2605,15 @@ class MainWindow(QMainWindow):
         side.addWidget(self.navigation_scroll, 1)
         self.nav_scroll = sidebar
         layout.addWidget(sidebar)
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        self.breadcrumb = label("", "pageLocation")
+        self.breadcrumb.setAccessibleName("目前頁面位置")
+        content.addWidget(self.breadcrumb)
         self.stack = QStackedWidget()
-        layout.addWidget(self.stack, 1)
+        content.addWidget(self.stack, 1)
+        layout.addLayout(content, 1)
 
         self.research = Research(self)
         from seed.workbench import JobPage, RegistryPage, ReviewPage
@@ -2662,6 +2734,8 @@ class MainWindow(QMainWindow):
         if previous == 1 and index != 1:
             self.pages[1].save_draft()
         self.stack.setCurrentIndex(index)
+        group, page = PAGES[index]
+        self.breadcrumb.setText(f"{group} / {page}")
         for button_index, button in enumerate(self.navigation[:len(PAGES)]):
             button.setChecked(index == button_index)
         self.pages[index].perform(self.pages[index].refresh)
@@ -2694,12 +2768,22 @@ class MainWindow(QMainWindow):
         self.collapse_button.setIconSize(QSize(20, 20))
         margin = 2 if narrow else 10
         self.nav_links.setContentsMargins(margin, 0, margin, 0)
+        current = self.stack.currentIndex()
+        group, current_title = PAGES[current] if current >= 0 else ("", "")
         for heading in (*self.groups, *self.dividers):
             heading.setVisible(not narrow)
+        for heading in self.groups:
+            heading.setProperty("currentGroup", heading.text() == group)
+            heading.style().unpolish(heading)
+            heading.style().polish(heading)
         rail = {1: "chat", 6: "person", 10: "clock", 5: "tree", 9: "settings"}
+        group_entry = {"工作空間": 1, "人格與記憶": 6, "技能系統": 5, "系統管理": 9}
         for index, button in enumerate(self.navigation):
             title = self.navigation_entries[index][1]
             button.setText("" if narrow else title)
+            position = index == (group_entry.get(group) if narrow else current)
+            button.setProperty("currentLocation", position)
+            button.setToolTip(f"目前位置 · {group} / {current_title}" if position else title)
             if narrow and index in rail:
                 button.setIcon(icon(rail[index], colors["nav_text"]))
                 button.setIconSize(QSize(20, 20))

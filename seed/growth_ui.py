@@ -23,13 +23,17 @@ PRACTICE_CASES = {
 
 class GrowthPage(ListPage):
     def __init__(self, window):
-        super().__init__(window, "成長證據", "從實際回覆核對查證行為，並查看既有的人工觀測。")
+        super().__init__(window, "成長證據", "查看人格基線、短期互動提示及有來源的行為證據。")
+        self.persona_summary = label("")
+        self.panel.insertWidget(0, self.persona_summary)
+        self.interaction_summary = label("", "muted")
+        self.panel.insertWidget(1, self.interaction_summary)
         self.verification_summary = label("")
-        self.panel.insertWidget(0, self.verification_summary)
+        self.panel.insertWidget(2, self.verification_summary)
         toolbar(self.panel, action("查證測試", self.practice, primary=True), action("查看查證證據", self.verification_sources),
                 action("採用查證指引", lambda: self.set_guidance(True)), action("撤回指引", lambda: self.set_guidance(False)))
         self.summary = label("")
-        self.panel.insertWidget(1, self.summary)
+        self.panel.insertWidget(3, self.summary)
         toolbar(self.panel, action("新增人工觀測", self.choose_event), action("更正人工觀測", self.correct),
                 action("保存人工評估", self.save_evaluation), action("人工評估紀錄", self.checkpoints))
 
@@ -42,7 +46,8 @@ class GrowthPage(ListPage):
         for dimension, item in result["dimensions"].items():
             baseline = "未測量" if item["baseline"] is None else str(item["baseline"])
             observed = "資料不足" if item["observed"] is None else f"{item['observed']}（觀測範圍 {item['observed_range'][0]}–{item['observed_range'][1]}）"
-            lines.append(f"{TITLES[dimension]}　問卷 {baseline}　觀測 {observed}　{len(item['evidence'])} 筆／{item['contexts']} 個會話")
+            sample = f"　{len(item['evidence'])} 筆／{item['contexts']} 個會話" if item["evidence"] else ""
+            lines.append(f"{TITLES[dimension]}　問卷 {baseline}　觀測 {observed}{sample}")
         return "\n".join(lines)
 
     def refresh(self):
@@ -52,17 +57,35 @@ class GrowthPage(ListPage):
             evaluation = verification_evaluation(db, identity)
             decision = verification_decision(db, identity)
             effective = effective_verification(db, identity) if decision and decision["approved"] else None
+            baseline = db.execute("SELECT id,name,profile FROM persona_versions ORDER BY id DESC LIMIT 1").fetchone()
+            cue = db.execute("""SELECT o.label,o.valid_until FROM emotion_observations o JOIN experience_events e ON e.id=o.event_id
+                WHERE e.identity_id=? AND o.disposition='inferred' AND o.valid_until>CURRENT_TIMESTAMP
+                ORDER BY e.id DESC LIMIT 1""", (identity,)).fetchone()
+        if baseline:
+            measurement = "可與現有問卷比較" if baseline["profile"] else "這個版本沒有問卷量測"
+            self.persona_summary.setText(f"穩定人格特質 · 目前基線 #{baseline['id']} {baseline['name']} · {measurement}")
+        else:
+            self.persona_summary.setText("穩定人格特質 · 目前工作區尚無已儲存的人格版本。保留既有的預設人格行為。")
+        cue_label = {"tension": "可能有壓力", "overload": "可能想減輕負擔"}.get(cue["label"], "有臨時提示") if cue else ""
+        self.interaction_summary.setText(
+            f"短期互動提示 · {cue_label} · 有效至 {cue['valid_until']} UTC。僅供當下對話參考。" if cue
+            else "短期互動提示 · 目前工作區沒有有效的情緒／互動提示。")
         if effective:
             state = "已採用" if self.store.preference("chat_growth_guidance", True) else "已採用，聊天開關已暫停"
         elif decision and decision["approved"]:
             state = "原採納已失效"
         else:
             state = "可採用" if evaluation["ready"] else "證據不足"
+        sample_summary = (f"{evaluation['passed']}／{len(evaluation['samples'])} 組符合預期 · {evaluation['contexts']} 個會話 · {state}"
+                          if evaluation["samples"] else "目前工作區沒有查證測試證據")
         self.verification_summary.setText(
-            f"查證行為 · {evaluation['passed']}／{len(evaluation['samples'])} 組符合預期 · "
-            f"{evaluation['contexts']} 個會話 · {state}\n"
-            "採用門檻為 90 天內三組不同來源、涵蓋兩個會話，通過至少三分之二及一組衝突案例。")
-        self.summary.setText("人工觀測及問卷對照\n" + self.comparison(evaluate(self.store, identity)))
+            f"能力／行為品質 · 來源查證 · {sample_summary}\n"
+            "採用門檻為 90 天內三組不同來源、涵蓋兩個會話，通過至少三分之二及一組衝突案例。結果只供調整查證指引。")
+        traits = evaluate(self.store, identity)
+        observed = any(item["observed"] is not None for item in traits["dimensions"].values())
+        guidance = ("可帶著證據到「人格工作室」人工檢視基線；問卷與人格版本由 Owner 決定。"
+                    if observed else "每項至少需要三筆、涵蓋兩個會話的人工觀測，才適合考慮更新。")
+        self.summary.setText("真實互動的人工觀測／問卷對照\n" + self.comparison(traits) + "\n" + guidance)
         self.populate(self.store.read("""SELECT g.* FROM growth_evidence g WHERE identity_id=?
             AND NOT EXISTS(SELECT 1 FROM growth_evidence newer WHERE newer.supersedes=g.id)
             ORDER BY g.id DESC LIMIT 300""", self.identity()),
