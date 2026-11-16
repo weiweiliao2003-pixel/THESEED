@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QColorDialog, QComboBox, Q
                                QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
 
 from seed.backup import backup_workspace, open_backup, restore_into
+from seed.context_budget import for_metadata
+from seed.input_fields import FocusHintEdit
+from seed.model_catalog import PURPOSE_LABELS, use_cases
 from seed.providers import BASES, KINDS
 from seed.theme import DEFAULT_SKIN, FONT_CHOICES, SKINS, colors_for, navigation_token, read_skin, theme_document
 from seed.window import ITEM_ID, Page, action, card, label, replace_items, toolbar
@@ -181,6 +184,7 @@ class ServiceWizard(QDialog):
         self.service = window.providers
         self.request = None
         self.discovered = {}
+        self.model_picks = set()
         self.resize(760, 500)
         layout = QVBoxLayout(self)
         margins = (0, 0, 0, 0) if embedded else (18, 16, 18, 14)
@@ -205,16 +209,33 @@ class ServiceWizard(QDialog):
         self.manual_model.textChanged.connect(self.update_add_button)
         self.form.addWidget(self.manual_toggle)
         self.form.addWidget(self.manual_model)
+        self.search_models = FocusHintEdit("搜尋模型 ID 或用途")
+        self.purpose_filter = choices({"all": "全部用途", **PURPOSE_LABELS})
+        self.model_sort = choices({"id": "依模型 ID", "context": "依容量（未知在後）"})
+        filters = QHBoxLayout()
+        for field in (self.search_models, self.purpose_filter, self.model_sort):
+            filters.addWidget(field)
+        self.form.addLayout(filters)
         self.models = QListWidget()
         self.models.setAccessibleName("選擇模型")
-        self.models.setMinimumHeight(110)
-        self.models.setMaximumHeight(144)
+        self.models.setMinimumHeight(185)
         self.form.addWidget(self.models, 1)
+        self.model_detail = QPlainTextEdit(readOnly=True)
+        self.model_detail.setAccessibleName("模型能力、容量與費率")
+        self.model_detail.setMinimumHeight(158)
+        self.form.addWidget(self.model_detail)
+        self.default_label = label("", "muted")
+        self.form.addWidget(self.default_label)
         self.status = label("選擇供應商並讀取可用模型清單。", "muted")
         self.form.addWidget(self.status)
         self.test_button = action("測試連線", self.discover, primary=True)
         self.add_button = action("加入服務", self.save)
         self.add_button.setEnabled(False)
+        self.models.itemChanged.connect(self.pick_model)
+        self.models.currentItemChanged.connect(self.describe_model)
+        self.search_models.textChanged.connect(self.render_models)
+        self.purpose_filter.currentIndexChanged.connect(self.render_models)
+        self.model_sort.currentIndexChanged.connect(self.render_models)
         toolbar(self.form, self.test_button, self.add_button)
         overview, listing = card()
         listing.addWidget(label("已加入的服務", "sectionTitle"))
@@ -234,7 +255,9 @@ class ServiceWizard(QDialog):
         listing.addWidget(strategy)
         self.columns.addWidget(overview, 2)
         self.details = QStackedWidget()
-        self.details.addWidget(panel)
+        model_scroll = QScrollArea(widgetResizable=True)
+        model_scroll.setWidget(panel)
+        self.details.addWidget(model_scroll)
         editor_card, editor_layout = card()
         self.editor = ProvidersDialog(window, embedded=True, back=self.show_new, changed=self.refresh)
         editor_layout.addWidget(self.editor)
@@ -261,6 +284,10 @@ class ServiceWizard(QDialog):
                 self.services.setMaximumHeight(110 if direction == QBoxLayout.Direction.TopToBottom else 165)
 
     def refresh(self):
+        default = self.window.default_provider()
+        self.default_label.setText(f"目前對話預設 · {default['model']}" if default else "目前對話預設 · 尚未設定")
+        if hasattr(self, "editor"):
+            self.editor.default_status.setText(f"{default['name']} · {default['model']}" if default else "尚未設定對話預設")
         previous = self.services.currentItem()
         selected = previous.data(ITEM_ID) if previous else None
         self.services.clear()
@@ -281,13 +308,14 @@ class ServiceWizard(QDialog):
         self.kind.setFocus()
 
     def manual_mode(self, enabled):
-        self.models.setVisible(not enabled)
+        for field in (self.models, self.search_models, self.purpose_filter, self.model_sort, self.model_detail):
+            field.setVisible(not enabled)
         self.manual_model.setVisible(enabled)
         self.update_add_button()
 
     def update_add_button(self):
         self.add_button.setEnabled(self.request is None and (bool(self.manual_model.text().strip())
-            if self.manual_toggle.isChecked() else bool(self.discovered)))
+            if self.manual_toggle.isChecked() else bool(self.model_picks)))
 
     def rotate(self):
         item = self.services.currentItem()
@@ -313,8 +341,8 @@ class ServiceWizard(QDialog):
 
     def clear_models(self):
         self.discovered = {}
-        self.models.clear()
-        self.update_add_button()
+        self.model_picks.clear()
+        self.render_models()
 
     def discover(self):
         if self.request:
@@ -346,16 +374,77 @@ class ServiceWizard(QDialog):
         except (ValueError, TypeError, AttributeError):
             self.status.setText("服務沒有傳回可讀取的模型清單。")
             return
-        for index, name in enumerate(self.discovered):
-            item = QListWidgetItem(name, self.models)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if index == 0 else Qt.CheckState.Unchecked)
+        self.render_models()
+        self.status.setText("勾選要加入的模型（最多八項）。點選一列可查看用途與容量。" if self.discovered else "清單沒有可用的文字模型。")
+
+    def catalog_base(self):
+        return BASES.get(self.kind.currentData(), self.base_url.text().strip()).rstrip("/")
+
+    def render_models(self, *_):
+        kind, base = self.kind.currentData(), self.catalog_base()
+        purpose = self.purpose_filter.currentData()
+        term = self.search_models.text().strip().casefold()
+        earlier = self.models.currentItem()
+        selected = earlier.data(ITEM_ID) if earlier else None
+        names = sorted(self.discovered, key=str.casefold)
+        if self.model_sort.currentData() == "context":
+            names.sort(key=lambda name: -(self.discovered[name].get("input_tokens") or 0))
+        blocked = self.models.blockSignals(True)
+        try:
+            self.models.clear()
+            for name in names:
+                roles = use_cases(kind, base, name, self.discovered[name])
+                titles = " · ".join(PURPOSE_LABELS[key] for key in roles)
+                if (purpose != "all" and purpose not in roles) or term not in f"{name} {titles}".casefold():
+                    continue
+                item = QListWidgetItem(f"{name}\n{titles}", self.models)
+                item.setData(ITEM_ID, name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked if name in self.model_picks else Qt.CheckState.Unchecked)
+                if name == selected:
+                    self.models.setCurrentItem(item)
+            if self.models.currentItem() is None and self.models.count():
+                self.models.setCurrentRow(0)
+        finally:
+            self.models.blockSignals(blocked)
+        self.describe_model(self.models.currentItem())
         self.update_add_button()
-        self.status.setText(f"清單連線成功。選擇要加入的模型（最多八項）。" if self.discovered else "清單沒有可用的文字模型。")
+
+    def pick_model(self, item):
+        model = item.data(ITEM_ID)
+        if item.checkState() == Qt.CheckState.Checked:
+            self.model_picks.add(model)
+        else:
+            self.model_picks.discard(model)
+        self.update_add_button()
+
+    def describe_model(self, item, *_):
+        if item is None:
+            self.model_detail.setPlainText("沒有符合篩選條件的模型。" if self.discovered else "讀取模型清單後可查看詳細資料。")
+            return
+        name = item.data(ITEM_ID)
+        kind, base, meta = self.kind.currentData(), self.catalog_base(), self.discovered[name]
+        purposes = use_cases(kind, base, name, meta)
+        number = lambda value: f"{value:,} Token" if type(value) is int and value > 0 else "未公布"
+        capacity = "未公布" if meta.get("input_only") else number(meta.get("input_tokens"))
+        input_limit = f" · 供應商輸入上限 {number(meta.get('input_tokens'))}" if meta.get("input_only") else ""
+        window = for_metadata(meta)
+        rate = self.service.meter.model_rate(kind, base, name)
+        if rate:
+            values = json.loads(rate["rates"])
+            price = (f"既有費率快照 · {rate['tier']} · {rate['currency']} 每百萬 Token 輸入 {values['input']}／輸出 {values['output']}\n"
+                     f"來源 {rate['source_url']} · 核對 {rate['verified_at']} UTC")
+        else:
+            price = "費率與免費額度待核對，沒有此端點和模型的登錄費率。"
+        self.model_detail.setPlainText("\n".join([
+            *(f"{PURPOSE_LABELS[key]}　{reason}" for key, reason in purposes.items()),
+            f"上下文容量 {capacity}{input_limit} · 最大輸出 {number(meta.get('output_tokens'))}",
+            f"THESEED 預計上下文輸入預算 {window.input_limit:,} Token（已保留輸出與安全空間）",
+            price, f"能力與容量來源：供應商模型清單 · {meta.get('observed_at', '日期未記錄')}",
+        ]))
 
     def save(self):
-        selected = [self.models.item(i).text() for i in range(self.models.count())
-                    if self.models.item(i).checkState() == Qt.CheckState.Checked]
+        selected = sorted(self.model_picks, key=str.casefold)
         kind = self.kind.currentData()
         models = {name: self.discovered[name] for name in selected}
         if self.manual_toggle.isChecked():
@@ -371,7 +460,7 @@ class ServiceWizard(QDialog):
         self.clear_models()
         self.refresh()
         self.window.refresh_status()
-        self.status.setText(f"已加入 {len(keys)} 個模型。")
+        self.status.setText(f"已加入 {len(keys)} 個模型。可在已加入的服務選擇「設為對話預設」。")
 
     def advanced(self, profile_id):
         self.editor.load(self.service.profile(profile_id))

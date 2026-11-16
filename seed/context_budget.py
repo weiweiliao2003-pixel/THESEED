@@ -52,12 +52,16 @@ class Budget:
         return self.measure(messages) <= self.input_limit
 
 
-def for_profile(service, profile):
-    metadata = service.metadata(profile["id"])
+def for_metadata(metadata, encoding=FALLBACK):
     window = metadata.get("context_window") or metadata.get("input_tokens")
     if type(window) is not int or not 512 <= window <= 10_000_000:
         window = 16384
     output = metadata.get("output_tokens")
+    return Budget.for_model(window, output if type(output) is int and output > 0 else None, encoding)
+
+
+def for_profile(service, profile):
+    metadata = service.metadata(profile["id"])
     encoding = FALLBACK
     if profile["kind"] == "openai" and profile["base_url"] == "https://api.openai.com/v1":
         from tiktoken.model import encoding_name_for_model
@@ -68,4 +72,4 @@ def for_profile(service, profile):
                 encoding = name
         except (KeyError, OSError, ValueError):
             pass
-    return Budget.for_model(window, output if type(output) is int and output > 0 else None, encoding)
+    return for_metadata(metadata, encoding)

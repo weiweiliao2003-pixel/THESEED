@@ -13,7 +13,7 @@ from seed.backup import backup_workspace, open_backup, restore_into
 from seed.context import ContextComposer
 from seed.experience import ExperienceJournal, append_message
 from seed.state import WorkspaceState, write_event
-from seed.store import CHAT_SCHEMA, PERSONALITY_SCHEMA, SCHEMA, WORKSPACE_SCHEMA, Store
+from seed.store import SCHEMA_VERSION, CHAT_SCHEMA, PERSONALITY_SCHEMA, SCHEMA, WORKSPACE_SCHEMA, Store
 from seed.window import MainWindow
 
 
@@ -40,7 +40,7 @@ class ExperienceTests(unittest.TestCase):
             db.execute("INSERT INTO state_events(kind,conversation_id,source,detail,refs) VALUES ('experience',1,'測試','事件來源','{\"message\":1}')")
         store = Store(directory)
         journal = ExperienceJournal(store)
-        self.assertEqual(store.read("PRAGMA user_version")[0][0], 8)
+        self.assertEqual(store.read("PRAGMA user_version")[0][0], SCHEMA_VERSION)
         with closing(sqlite3.connect(directory / "seed.before-v5.sqlite3")) as db:
             self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 4)
             self.assertEqual(db.execute("SELECT count(*) FROM messages").fetchone()[0], 2)

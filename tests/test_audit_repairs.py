@@ -16,7 +16,7 @@ from seed.experience import append_message
 from seed.growth import (VERIFICATION_GUIDANCE, VERIFICATION_SAMPLE, effective_verification,
                          exclude_verification, record_observation, set_verification_decision,
                          verification_evaluation)
-from seed.store import Store
+from seed.store import SCHEMA_VERSION, Store
 from seed.window import MainWindow
 from test_workspace import fixture_server, profile
 
@@ -189,7 +189,7 @@ class AuditRepairTests(unittest.TestCase):
         with open_backup(archive) as (database, _):
             restore_into(database, self.root / "copy")
         restored = Store(self.root / "copy")
-        self.assertEqual(restored.read("PRAGMA user_version")[0][0], 8)
+        self.assertEqual(restored.read("PRAGMA user_version")[0][0], SCHEMA_VERSION)
         self.assertFalse(restored.preference("chat_cross_recall", False))
         self.assertFalse(restored.preference("chat_cross_archive", False))
         with restored.connection() as db:

@@ -22,7 +22,8 @@ V6_TABLES = V5_TABLES + ("growth_evidence", "growth_evaluations", "model_calls",
                       "source_snapshots", "learning_candidates", "perception_sessions")
 V7_TABLES = V6_TABLES + ("model_call_usage", "api_price_versions", "api_call_costs", "api_quota_snapshots",
                       "emotion_observations", "topic_summaries", "context_source_exclusions", "research_evidence")
-TABLES = V7_TABLES + ("attachments", "attachment_drafts", "message_attachments")
+V8_TABLES = V7_TABLES + ("attachments", "attachment_drafts", "message_attachments")
+TABLES = V8_TABLES + ("memory_revisions",)
 LIMIT = 256 * 1024 * 1024
 MEDIA_LIMIT = 2 * 1024**3
 
@@ -30,6 +31,8 @@ MEDIA_LIMIT = 2 * 1024**3
 def tables_for(version):
     if version == SCHEMA_VERSION:
         return TABLES
+    if version == 8:
+        return V8_TABLES
     if version == 7:
         return V7_TABLES
     if version == 6:
@@ -46,7 +49,7 @@ def inspect_database(path):
                   if name not in INDEX_TABLES}
         version = db.execute("PRAGMA user_version").fetchone()[0]
         tables = tables_for(version)
-        if (version not in {2, 3, 4, 5, 6, 7, SCHEMA_VERSION} or
+        if (version not in {2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION} or
                 {name for name, kind in schema.items() if kind == "table"} != set(tables) or
                 any(kind not in {"table", "index"} for kind in schema.values())):
             raise ValueError("備份資料結構與目前版本不相容。")

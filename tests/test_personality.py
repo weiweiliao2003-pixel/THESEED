@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog
 from seed.backup import inspect_database, open_backup, restore_into
 from seed.personality import DRAFT_KEY, build_profile, default_draft, question_bank
 from seed.personality_ui import PreviewDialog, Questionnaire
-from seed.store import SCHEMA, WORKSPACE_SCHEMA, Store
+from seed.store import SCHEMA_VERSION, SCHEMA, WORKSPACE_SCHEMA, Store
 from seed.theme import DEFAULT_SKIN
 from seed.window import MainWindow
 
@@ -145,7 +145,7 @@ class PersonalityTests(unittest.TestCase):
                                                           "sha256":hashlib.sha256(payload).hexdigest()}))
         migrated = Store(directory)
         self.assertEqual((directory / "seed.before-v3.sqlite3").read_bytes()[:16], payload[:16])
-        self.assertEqual(migrated.read("PRAGMA user_version")[0][0], 8)
+        self.assertEqual(migrated.read("PRAGMA user_version")[0][0], SCHEMA_VERSION)
         self.assertEqual(migrated.read("SELECT boundaries FROM persona_versions")[0][0], "界線")
         with open_backup(archive) as (path, _):
             restore_into(path, self.root / "recovered")

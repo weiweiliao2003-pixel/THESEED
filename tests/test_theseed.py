@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
@@ -91,9 +92,14 @@ class TheseedTests(unittest.TestCase):
                     QTest.qWait(25)
                 self.assertIsNone(wizard.request)
                 self.assertEqual(wizard.models.count(), 1)
+                self.assertFalse(wizard.add_button.isEnabled())
+                self.assertIn("8,192 Token", wizard.model_detail.toPlainText())
+                self.assertIn("最大輸出 未公布", wizard.model_detail.toPlainText())
+                wizard.models.item(0).setCheckState(Qt.CheckState.Checked)
                 wizard.save()
                 profile = self.window.providers.profiles()[0]
                 self.assertEqual(profile["model"], "local-chat")
+                self.assertIsNone(self.window.default_provider())
                 self.assertEqual(self.store.preference(f"provider_meta:{profile['id']}")["input_tokens"], 8192)
                 self.assertEqual(hits, ["/v1/models"])
                 wizard.close()
