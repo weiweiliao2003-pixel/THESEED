@@ -28,6 +28,7 @@ try {
         $available = @([System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers())
         if ($available.Count -eq 0) { throw 'NO_RECOGNIZER' }
         $selected = $available | Where-Object { $_.Culture.Name -eq 'zh-TW' } | Select-Object -First 1
+        if (-not $selected -and $data.strict_locale) { throw 'NO_ZH_TW_RECOGNIZER' }
         if (-not $selected) { $selected = $available[0] }
         $engine = [System.Speech.Recognition.SpeechRecognitionEngine]::new($selected)
         try {
@@ -61,7 +62,8 @@ public sealed class SeedSpeechEvents {
                 $phrase = $null
                 while ($events.Phrases.TryDequeue([ref]$phrase)) {
                     if ($count -lt 20) {
-                        @{ event = 'phrase'; text = $phrase.Text; confidence = $phrase.Confidence; voice = $selected.Culture.Name } | ConvertTo-Json -Compress
+                        @{ event = 'phrase'; text = $phrase.Text; confidence = $phrase.Confidence;
+                           voice = $selected.Culture.Name; recognizer = $selected.Name } | ConvertTo-Json -Compress
                         $count++
                     }
                 }

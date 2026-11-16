@@ -8,7 +8,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QMimeData, QUrl, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QInputDialog
 
 from seed import chat_queue
 from seed.attachments import Attachments, asset_file, sent_ids
@@ -195,7 +195,16 @@ class MediaTests(unittest.TestCase):
         cursor.select(cursor.SelectionType.Document)
         chat.input.setTextCursor(cursor)
         chat.media.speech_slot = None
-        chat.media.voice_result(True, {"text": "新的逐字稿"})
+        result = {"text": "原始逐字稿", "confidence": .8, "voice": "zh-TW",
+                  "engine": "Fixture ASR", "microphone": "Fixture Mic"}
+        with patch.object(QInputDialog, "getMultiLineText", return_value=("", False)):
+            chat.media.voice_result(True, result)
+        self.assertEqual(chat.input.toPlainText(), "保留原文")
+        with patch.object(QInputDialog, "getMultiLineText", return_value=("新的逐字稿", True)) as review:
+            chat.media.voice_result(True, result)
+        self.assertIn("Fixture Mic", review.call_args.args[2])
+        self.assertIn("zh-TW", review.call_args.args[2])
+        self.assertIn("80%", review.call_args.args[2])
         self.assertIn("保留原文", chat.input.toPlainText())
         self.assertIn("新的逐字稿", chat.input.toPlainText())
         self.assertEqual(self.store.read("SELECT count(*) FROM messages")[0][0], 0)

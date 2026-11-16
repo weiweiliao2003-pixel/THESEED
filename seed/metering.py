@@ -173,7 +173,13 @@ class ResourceMeter(QObject):
         return f"{eligibility} · {item['quota_kind']} · " + (f"剩 {remaining:,}" if remaining is not None else "餘額未知")
 
     def today(self):
-        start = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.estimated_since(datetime.now().date())
+
+    def month_to_date(self):
+        return self.estimated_since(datetime.now().date().replace(day=1))
+
+    def estimated_since(self, local_day):
+        start = datetime.combine(local_day, datetime.min.time())
         begin = start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         rows = self.store.read("""SELECT c.total,c.currency,c.status FROM model_call_usage u
             LEFT JOIN api_call_costs c ON u.id=c.usage_id WHERE u.sent_at>=?""", begin)

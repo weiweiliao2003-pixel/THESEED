@@ -43,17 +43,19 @@ QScrollArea#navScroll QScrollBar::handle:vertical { background: @nav_divider; bo
 QScrollArea#navScroll QScrollBar::add-line:vertical, QScrollArea#navScroll QScrollBar::sub-line:vertical {
     height: 0; background: transparent;
 }
-QLabel#navGroup { color: #b5cbd5; font-size: 16px; font-weight: 600; padding: 14px 10px 5px; }
+QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 700; padding: @nav_gap 10px 6px; }
 QFrame#navDivider { background: @nav_divider; max-height: 1px; }
 QPushButton#navButton {
-    background: transparent; color: #e1edf2; text-align: left; font-size: 15px; font-weight: 500;
-    border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 7px; padding: 0 16px;
+    background: transparent; color: #b5cbd5; text-align: left; font-size: @nav_item; font-weight: 400;
+    border: 1px solid transparent; border-left-width: 3px; border-radius: 7px; padding: 0 16px;
 }
-QPushButton#navButton:hover { background: #214556; }
-QPushButton#navButton:checked { color: #ffffff; background: #285548; border-left-color: #f6fbfd; font-weight: 600; }
-QPushButton#navButton[collapsed="true"] { text-align: center; padding: 0; border: 1px solid transparent; }
-QPushButton#navButton[collapsed="true"]:checked { border-color: #3e7566; }
-QPushButton#navButton:focus { border-color: #a5dbc7; }
+QPushButton#navButton[collapsed="true"] { text-align: center; padding: 0; }
+QPushButton#navButton:focus { border-style: dashed; border-color: @nav_focus; border-left-color: transparent; }
+QPushButton#navButton:hover { color: #f6fbfd; background: #214556; border-left-color: @nav_marker; }
+QFrame#resourceBlock { background: #ffffff; border: 1px solid #d7e2e7; border-radius: 8px; }
+QLabel#resourceTitle { font-size: 17px; font-weight: 700; }
+QLabel#resourceMetric { font-size: 15px; font-weight: 700; }
+QLabel#resourceCaption { color: #496270; font-size: 12px; }
 QPushButton#answerOption { text-align: left; }
 QPushButton#answerOption:checked { background: #e4eef1; border-color: #1a644f; }
 QProgressBar { background: #e4eef1; border: 1px solid #d7e2e7; border-radius: 4px; }
@@ -223,11 +225,15 @@ def apply_skin(window, values):
     def blended(ratio):
         return QColor(*(round(base + (value - base) * ratio) for base, value in
                         zip(nav.getRgb()[:3], text.getRgb()[:3], strict=True))).name()
-    colors.update(nav_divider=blended(.26), nav_hover=blended(.13))
+    nav_font = navigation_token(values, "font")
+    colors.update(nav_divider=blended(.26), nav_hover=blended(.16), nav_child=blended(.82),
+                  nav_marker=blended(.95), nav_focus=blended(.80),
+                  nav_heading=f"{nav_font+4}px", nav_item=f"{nav_font}px",
+                  nav_gap=f"{navigation_token(values, 'group_gap')}px")
     source_colors = {
         "#f1f5f7": "background", "#ffffff": "panel", "#fbfdfe": "field", "#112638": "text",
         "#496270": "muted", "#d7e2e7": "line", "#1a644f": "accent", "#132f40": "nav",
-        "#e1edf2": "nav_text", "#f6fbfd": "nav_text", "#b5cbd5": "nav_text", "#214556": "nav_hover",
+        "#e1edf2": "nav_text", "#f6fbfd": "nav_text", "#b5cbd5": "nav_child", "#214556": "nav_hover",
         "#285548": "accent", "#3e7566": "accent", "#18394b": "text", "#b7c9d2": "line",
         "#edf6f3": "soft", "#edf2f4": "soft", "#cbd9e0": "line", "#e4eef1": "soft",
         "#e9f0f3": "background", "#d5eee4": "soft", "#14392d": "text", "#165845": "text",
@@ -237,11 +243,6 @@ def apply_skin(window, values):
     }
     template = STYLE.replace('color: #ffffff; background: #1a644f', 'color: @on_accent; background: #1a644f')
     template = template.replace('color: #ffffff; background: #285548', 'color: @on_accent; background: #285548')
-    template = template.replace('font-size: 16px; font-weight: 600; padding: 14px',
-                                f'font-size: {navigation_token(values, "font")+1}px; font-weight: 600; '
-                                f'padding: {navigation_token(values, "group_gap")-2}px')
-    template = template.replace('font-size: 15px; font-weight: 500;',
-                                f'font-size: {navigation_token(values, "font")}px; font-weight: 500;')
     template = re.sub(r"#[0-9a-f]{6}|@[a-z_]+",
                       lambda match: colors.get(source_colors.get(match[0], match[0].lstrip("@")), match[0]), template)
     if values.get("typography", {}).get("weight") == "medium":

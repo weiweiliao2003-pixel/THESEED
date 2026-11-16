@@ -1057,6 +1057,7 @@ class Conversations(Page):
         menu.addAction("擷取截圖加入附件", self.media.screen_image)
         menu.addAction("攝影機快照加入附件", self.media.camera_image)
         menu.addAction("設定 FFmpeg 工具", self.media.configure_video)
+        menu.addAction("語音辨識設定", lambda: self.perform(self.media.configure_dictation))
         menu.addAction("進階感知工具", self.perception)
         menu.addAction("引用會話訊息", self.quote_message)
         tasks = menu.addMenu("指派目前會話")
@@ -2496,6 +2497,7 @@ class MainWindow(QMainWindow):
             button.setAccessibleName(title)
             button.setToolTip(title)
             button.setCheckable(index < len(PAGES))
+            button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             self.navigation.append(button)
         navigation_pane = QWidget(objectName="navigationPane")
         links = QVBoxLayout(navigation_pane)
@@ -2683,7 +2685,7 @@ class MainWindow(QMainWindow):
             title = self.navigation_entries[index][1]
             button.setText("" if narrow else title)
             if narrow and index in rail:
-                button.setIcon(icon(rail[index], colors["on_accent"] if button.isChecked() else colors["nav_text"]))
+                button.setIcon(icon(rail[index], colors["nav_text"]))
                 button.setIconSize(QSize(20, 20))
             else:
                 from PySide6.QtGui import QIcon

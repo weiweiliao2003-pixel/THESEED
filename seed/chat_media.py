@@ -6,10 +6,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QSize, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QFontMetrics, QPixmap
-from PySide6.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+from PySide6.QtMultimedia import QMediaDevices
+from PySide6.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QPushButton, QScrollArea, QWidget
 
 from seed.attachments import MAX_FILES, Attachments, asset_file, slot_for
-from seed.perception import CameraSnapshot, WindowsSpeech, encode_image
+from seed.perception import CameraSnapshot, encode_image
+from seed.dictation import BACKENDS, DictationSession, audio_device, whisper_paths
 from seed.video import FORMATS, tool_pair
 
 
@@ -239,20 +241,72 @@ class ChatMedia(QObject):
 
     def microphone(self):
         if self.speech:
-            self.set_status("正在停止語音辨識…")
             self.speech.stop()
             return
         if self.chat.archived:
             self.set_status("請先回到使用中的會話再啟用語音。")
             return
-        self.speech_slot = self.chat.selected()
-        self.speech = WindowsSpeech("listen", "", self)
-        self.speech.listening.connect(lambda voice: self.set_status(f"聆聽中 · {voice} · 再按麥克風停止"))
-        self.speech.finished.connect(self.voice_result)
-        self.set_status("正在準備 Windows 語音辨識…")
-        self.chat.microphone.setToolTip("停止語音辨識")
-        self.chat.microphone.setAccessibleName("停止語音辨識")
-        self.speech.start()
+        store = self.chat.store
+        settings = store.preference("dictation_settings", {})
+        if not isinstance(settings, dict) or settings.get("backend", "windows") not in BACKENDS:
+            self.set_status("辨識器設定無法讀取，請從「＋」重新選擇。")
+            return
+        backend = settings.get("backend", "windows")
+        session = None
+        try:
+            device = audio_device(settings.get("microphone"))
+            paths = whisper_paths(settings.get("cli", ""), settings.get("model", "")) if backend == "whisper" else ()
+            session = DictationSession(device, backend, paths, self)
+            self.speech = session
+            self.speech_slot = self.chat.selected()
+            session.status.connect(self.set_status)
+            session.finished.connect(self.voice_result)
+            self.set_status(f"正在準備 · {device.description()} · {BACKENDS[backend]}")
+            self.chat.microphone.setToolTip("停止錄音／取消辨識")
+            self.chat.microphone.setAccessibleName("停止錄音／取消辨識")
+            session.start()
+        except (ValueError, OSError) as exc:
+            if session:
+                session.cancel()
+            self.voice_result(False, str(exc))
+
+    def configure_dictation(self):
+        if self.speech:
+            self.set_status("請先停止語音辨識，再調整設定。")
+            return
+        store = self.chat.store
+        settings = store.preference("dictation_settings", {})
+        if not isinstance(settings, dict):
+            settings = {}
+        default = QMediaDevices.defaultAudioInput()
+        if default.isNull():
+            automatic = "Windows 預設（沒有裝置）"
+        else:
+            automatic = f"Windows 預設 · {default.description()}"
+        microphones = {automatic: ""}
+        microphones.update({f"{device.description()} · {i}": device.id().data().hex()
+                            for i, device in enumerate(QMediaDevices.audioInputs(), 1)})
+        selected = next((i for i, value in enumerate(microphones.values()) if value == settings.get("microphone")), 0)
+        name, ok = QInputDialog.getItem(self.chat, "語音辨識設定", "選擇錄音裝置", list(microphones), selected, False)
+        if not ok:
+            return
+        selected = int(settings.get("backend") == "whisper")
+        engine, ok = QInputDialog.getItem(self.chat, "語音辨識設定", "選擇離線辨識器", list(BACKENDS.values()), selected, False)
+        if not ok:
+            return
+        backend = next(key for key, label in BACKENDS.items() if label == engine)
+        updates = settings | {"backend": backend, "microphone": microphones[name]}
+        if backend == "whisper":
+            cli, _ = QFileDialog.getOpenFileName(self.chat, "選擇 whisper-cli.exe", settings.get("cli", ""), "工具 (whisper-cli.exe)")
+            if not cli:
+                return
+            model, _ = QFileDialog.getOpenFileName(self.chat, "選擇多語言 ggml 模型", settings.get("model", ""), "模型 (*.bin)")
+            if not model:
+                return
+            whisper_paths(cli, model)
+            updates |= {"cli": cli, "model": model}
+        store.set_preference("dictation_settings", updates)
+        self.set_status(f"已選擇 {name} · {engine}")
 
     @Slot(bool, object)
     def voice_result(self, ok, result):
@@ -264,27 +318,37 @@ class ChatMedia(QObject):
         if not ok:
             self.set_status(str(result) if str(result) == "已停止。" else "辨識失敗 · " + str(result))
             return
-        text = result.get("text", "")
-        if text and self.speech_slot == self.chat.selected():
+        previous = self.speech_slot
+        if not result.get("text"):
+            self.set_status("已停止 · 本次未收到逐字稿。")
+            return
+        descriptor = (f"麥克風 {result['microphone']}\n辨識器 {result.get('recognizer') or result['engine']}\n"
+                      f"語言 {result['voice']} · 辨識器信心 {result['confidence']:.0%}\n檢閱後按確定加入草稿。")
+        edited, accepted = QInputDialog.getMultiLineText(self.chat, "檢閱語音辨識", descriptor, result["text"])
+        text = edited.strip()[:10000] if accepted else ""
+        if not text:
+            self.set_status("已停止 · 草稿未加入語音文字。")
+            return
+        if previous == self.chat.selected():
             cursor = self.chat.input.textCursor()
             cursor.setPosition(cursor.position())
             cursor.insertText((" " if cursor.position() else "") + text)
             self.chat.perform(self.chat.save_draft)
-        elif text:
+        else:
             def save():
                 store = self.chat.store
-                if self.speech_slot is None:
+                if previous is None:
                     former = store.preference("new_chat_draft", "")
                     store.set_preference("new_chat_draft", (former + "\n" + text).strip())
                 else:
                     store.write("""INSERT INTO conversation_drafts SELECT id,?,-1 FROM conversations WHERE id=?
-                        ON CONFLICT(conversation_id) DO UPDATE SET body=trim(body||char(10)||excluded.body)""", text, self.speech_slot)
+                        ON CONFLICT(conversation_id) DO UPDATE SET body=trim(body||char(10)||excluded.body)""", text, previous)
             self.chat.perform(save)
-        self.set_status("已停止 · 逐字稿已加入草稿。" if text else "已停止 · 本次未收到逐字稿。")
+        self.set_status("已停止 · 逐字稿已加入草稿。")
 
     def shutdown(self):
         self.screen_timer.stop()
         if self.capture:
             self.capture.cancel()
         if self.speech:
-            self.speech.cancel("已停止。")
+            self.speech.cancel()

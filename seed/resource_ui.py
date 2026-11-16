@@ -4,7 +4,7 @@ import json
 from datetime import datetime, time, timedelta, timezone
 
 from PySide6.QtCore import QDate, Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QDateEdit, QDialog, QFormLayout, QHeaderView,
+from PySide6.QtWidgets import (QComboBox, QDateEdit, QDialog, QFormLayout, QFrame, QHeaderView,
                                QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from seed.window import Page, action, label, toolbar
@@ -24,15 +24,12 @@ class ResourceSummary(QWidget):
         self.meter = window.providers.meter
         self.setObjectName("contextBody")
         column = QVBoxLayout(self)
-        column.setContentsMargins(10, 12, 10, 10)
-        column.setSpacing(9)
-        column.addWidget(label("API 資源", "sectionTitle"))
-        self.values = []
-        for heading in ("目前實際模型", "本輪 Token", "今日估算費用", "免費額度", "費率版本"):
-            column.addWidget(label(heading, "muted"))
-            value = label("—")
-            self.values.append(value)
-            column.addWidget(value)
+        column.setContentsMargins(10, 14, 10, 10)
+        column.setSpacing(10)
+        column.addWidget(label("API 資源", "resourceTitle"))
+        self.model, self.tokens = self.add_block(column, ("模型", "單次 Token"))
+        self.daily_cost, self.monthly_cost = self.add_block(column, ("今日估算費用", "本月估算費用"))
+        self.quota, self.rate = self.add_block(column, ("免費額度", "費率版本"), compact=True)
         column.addStretch(1)
         column.addWidget(action("詳細統計", show_detail))
         column.addWidget(action("收合", collapse))
@@ -40,26 +37,57 @@ class ResourceSummary(QWidget):
         self.update_timer.timeout.connect(self.refresh)
         self.meter.changed.connect(self.update_timer.start)
 
+    @staticmethod
+    def add_block(column, headings, *, compact=False):
+        block = QFrame(objectName="resourceBlock")
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(3)
+        values = []
+        for heading in headings:
+            if values:
+                layout.addSpacing(6)
+            layout.addWidget(label(heading, "resourceCaption"))
+            value = label("—", None if compact else "resourceMetric")
+            value.setAccessibleName(heading)
+            layout.addWidget(value)
+            values.append(value)
+        column.addWidget(block)
+        return values
+
+    @staticmethod
+    def cost_text(totals):
+        total, incomplete = totals
+        if not total:
+            return "待核對" if incomplete else "尚無呼叫"
+        return total.replace("／", "\n") + ("\n部分待核對" if incomplete else "")
+
     def refresh(self):
         if not self.isVisible() or self.window.closing:
             return
         active = self.meter.now()
         last = self.meter.latest()
-        total, incomplete = self.meter.today()
-        self.values[0].setText("\n".join(row["model_returned"] or row["model"] for row in active) or "閒置")
+        if active:
+            self.model.setText("\n".join(row["model_returned"] or row["model"] for row in active) + "\n呼叫中")
+        elif last:
+            self.model.setText((last["model_returned"] or last["model"]) + "\n上次呼叫")
+        else:
+            self.model.setText("尚無呼叫")
         observations = active or ([last] if last else [])
         usage = []
         for row in observations:
             tokens = json.loads(row["tokens"])
             number = tokens.get("total", tokens.get("input"))
-            usage.append(f"{number:,} · {SOURCES[row['usage_source']]}" if number is not None else "未知")
-        self.values[1].setText("\n".join(usage) or "尚無呼叫")
-        self.values[2].setText(total + ("\n部分待核對" if incomplete else "") if total else "待核對" if last else "尚無呼叫")
-        self.values[3].setText(self.meter.quota(active[-1] if active else last))
+            label_kind = " · 僅輸入" if "total" not in tokens and "input" in tokens else ""
+            usage.append(f"{number:,}{label_kind}\n{SOURCES[row['usage_source']]}" if number is not None else "用量未知")
+        self.tokens.setText("\n".join(usage) or "尚無呼叫")
+        self.daily_cost.setText(self.cost_text(self.meter.today()))
+        self.monthly_cost.setText(self.cost_text(self.meter.month_to_date()))
+        self.quota.setText(self.meter.quota(active[-1] if active else last))
         rate = self.meter.last_rate()
-        self.values[4].setText((f"{'費率已更新' if rate['changed'] else '已核對'} v{rate['id']}\n{rate['verified_at'][:10]}")
+        self.rate.setText((f"{'費率已更新' if rate['changed'] else '已核對'} v{rate['id']}\n{rate['verified_at'][:10]}")
                                if rate else "尚待核對")
-        self.values[4].setToolTip(rate["source_url"] if rate else "")
+        self.rate.setToolTip(rate["source_url"] if rate else "")
 
 
 class ResourcePage(Page):
