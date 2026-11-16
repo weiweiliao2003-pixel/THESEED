@@ -1,0 +1,39 @@
+# Python / build
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.spec
+
+# Windows distribution output
+SEED/_internal/
+SEED/SEED.exe
+*.exe
+
+# Personal workspace and secrets (never commit)
+Data/
+**/Data/
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+seed.before-*
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.log
+
+# Local files / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
