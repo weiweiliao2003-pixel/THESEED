@@ -12,10 +12,18 @@ dist/
 SEED/_internal/
 SEED/SEED.exe
 *.exe
+*.dll
+*.pyd
+*.lnk
+*.zip
 
 # Personal workspace and secrets (never commit)
 Data/
 **/Data/
+attachments/
+*.wav
+*.mp3
+*.mp4
 *.sqlite
 *.sqlite3
 *.db

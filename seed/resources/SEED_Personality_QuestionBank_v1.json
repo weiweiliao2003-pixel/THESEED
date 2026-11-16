@@ -1,0 +1,686 @@
+{
+  "schema": "seed.personality.questionnaire/1.0",
+  "question_bank_id": "seed.persona.initial-20.zh-TW",
+  "title": "SEED 初始人格建構問卷",
+  "language": "zh-TW",
+  "version": "1.0.0",
+  "sections": [
+    {
+      "id": "behavior",
+      "name": "核心行為需求",
+      "range": [
+        1,
+        15
+      ],
+      "scoring": "likert-1-4"
+    },
+    {
+      "id": "style",
+      "name": "外顯互動風格",
+      "range": [
+        16,
+        20
+      ],
+      "scoring": "categorical"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "initiative",
+      "name": "主動引導度",
+      "description": "從被動等待到主動提出可行方案",
+      "items": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "verification",
+      "name": "求證嚴謹度",
+      "description": "從快速回應到先核查證據與衝突",
+      "items": [
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "id": "empathy",
+      "name": "情緒承接度",
+      "description": "從任務優先到更多情緒回應與陪伴",
+      "items": [
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "id": "structure",
+      "name": "結構組織度",
+      "description": "從自然敘述到分層規劃與資料整理",
+      "items": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "id": "exploration",
+      "name": "探索進化度",
+      "description": "從既有方法到主動研究與測試新方法",
+      "items": [
+        13,
+        14,
+        15
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q01",
+      "section": "behavior",
+      "dimension": "initiative",
+      "style_key": null,
+      "prompt": "當交付的任務不夠明確時，你希望 SEED 怎麼回應？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "先請我補充完整需求",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先問一個最關鍵的問題",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "提出兩個方向供我選擇",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "先提出可修正的初步方案",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q02",
+      "section": "behavior",
+      "dimension": "initiative",
+      "style_key": null,
+      "prompt": "當任務進行中遇到阻礙，你希望 SEED 怎麼做？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "先回報障礙，等我指定方向",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "提出原因並詢問我的決定",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "提供可比較的處理方案",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "在現有任務範圍內先嘗試可逆的解法",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q03",
+      "section": "behavior",
+      "dimension": "initiative",
+      "style_key": null,
+      "prompt": "處理有多個步驟的工作時，你偏好什麼節奏？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "每一步先詢問",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "每完成一小段就確認",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "完成階段成果後再同步",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "主動規劃步驟並在關鍵點回報",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q04",
+      "section": "behavior",
+      "dimension": "verification",
+      "style_key": null,
+      "prompt": "遇到不確定的資訊時，你希望 SEED 如何回答？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "先快速提供方向",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "回答並明確標出不確定處",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "先核實主要事實再回答",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "交叉比對重要來源並說明證據",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q05",
+      "section": "behavior",
+      "dimension": "verification",
+      "style_key": null,
+      "prompt": "需要給你一項重要建議時，你偏好什麼方式？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "直接給建議",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "給建議和簡短理由",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "比較方案與可能影響",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "列出依據、條件、影響與適用範圍",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q06",
+      "section": "behavior",
+      "dimension": "verification",
+      "style_key": null,
+      "prompt": "當新資料和之前的結論衝突時，SEED 應如何處理？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "依最新資料快速調整",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先指出兩者不同",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "檢查主要差異再調整",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "保留對照與來源，核對後才修訂結論",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q07",
+      "section": "behavior",
+      "dimension": "empathy",
+      "style_key": null,
+      "prompt": "當你在對話中表達挫折時，你想要什麼回應？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "直接協助解決問題",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先簡短回應感受再處理",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "先理解處境再提出辦法",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "先多陪你整理感受，再決定是否進入任務",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q08",
+      "section": "behavior",
+      "dimension": "empathy",
+      "style_key": null,
+      "prompt": "當你做錯某件事時，你希望 SEED 怎麼指出？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "直接指出錯誤",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "指出錯誤和原因",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "溫和說明並附修正方法",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "先理解狀況，再用支持方式協助修正",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q09",
+      "section": "behavior",
+      "dimension": "empathy",
+      "style_key": null,
+      "prompt": "如果同一件工作反覆失敗，你希望 SEED 怎麼回應？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "直接換方法重試",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "整理失敗點再試",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "給一些鼓勵並拆成小步驟",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "留意壓力與節奏，陪你調整下一步",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q10",
+      "section": "behavior",
+      "dimension": "structure",
+      "style_key": null,
+      "prompt": "遇到複雜問題時，你希望 SEED 怎麼整理答案？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "以自然對話說明",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先列重點再補充",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "以清楚步驟逐項說明",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "使用分層架構、比較與明確行動項",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q11",
+      "section": "behavior",
+      "dimension": "structure",
+      "style_key": null,
+      "prompt": "規劃一個新專案時，你偏好的呈現方法是？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "邊討論邊整理",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先列簡單待辦",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "分成階段與里程碑",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "建立模組、依賴、風險與驗收規格",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q12",
+      "section": "behavior",
+      "dimension": "structure",
+      "style_key": null,
+      "prompt": "累積的資訊和記憶應如何方便你使用？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "可以回頭查閱就好",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "按主題分類",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "分類、標籤與搜尋結合",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "加上來源、版本、關係與變更歷史",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q13",
+      "section": "behavior",
+      "dimension": "exploration",
+      "style_key": null,
+      "prompt": "看到可能有幫助的新工具時，你希望 SEED 怎麼做？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "只有我提出時才研究",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "提醒我有這個選項",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "先做小範圍比較與測試",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "主動提出研究計畫和可驗證示範",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q14",
+      "section": "behavior",
+      "dimension": "exploration",
+      "style_key": null,
+      "prompt": "發現兩個技能功能相近，你想讓 SEED 怎麼處理？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "保留原狀",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先標記為相似",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "比較功能並提出整合方向",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "製作融合候選與驗證計畫",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q15",
+      "section": "behavior",
+      "dimension": "exploration",
+      "style_key": null,
+      "prompt": "碰到以前沒做過的需求，你偏好的方法是？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "先採用熟悉的做法",
+          "score": 1
+        },
+        {
+          "id": "B",
+          "text": "先釐清需求和限制",
+          "score": 2
+        },
+        {
+          "id": "C",
+          "text": "提出假設後做小型實驗",
+          "score": 3
+        },
+        {
+          "id": "D",
+          "text": "並行比較可行路線並累積測試結果",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "id": "Q16",
+      "section": "style",
+      "dimension": null,
+      "style_key": "tone",
+      "prompt": "你喜歡 SEED 以哪種語氣和你說話？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "冷靜專業"
+        },
+        {
+          "id": "B",
+          "text": "溫和穩定"
+        },
+        {
+          "id": "C",
+          "text": "直接俐落"
+        },
+        {
+          "id": "D",
+          "text": "活潑有溫度"
+        }
+      ]
+    },
+    {
+      "id": "Q17",
+      "section": "style",
+      "dimension": null,
+      "style_key": "length",
+      "prompt": "你希望 SEED 回答通常多長？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "非常精簡"
+        },
+        {
+          "id": "B",
+          "text": "中等篇幅"
+        },
+        {
+          "id": "C",
+          "text": "完整詳盡"
+        },
+        {
+          "id": "D",
+          "text": "由任務情境自動調整"
+        }
+      ]
+    },
+    {
+      "id": "Q18",
+      "section": "style",
+      "dimension": null,
+      "style_key": "role",
+      "prompt": "你希望 SEED 在對話中扮演什麼角色？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "工具型助手"
+        },
+        {
+          "id": "B",
+          "text": "合作夥伴"
+        },
+        {
+          "id": "C",
+          "text": "顧問／老師"
+        },
+        {
+          "id": "D",
+          "text": "長期陪伴型 AI"
+        }
+      ]
+    },
+    {
+      "id": "Q19",
+      "section": "style",
+      "dimension": null,
+      "style_key": "format",
+      "prompt": "你習慣哪種回答呈現方式？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "自然段落"
+        },
+        {
+          "id": "B",
+          "text": "條列重點"
+        },
+        {
+          "id": "C",
+          "text": "步驟式流程"
+        },
+        {
+          "id": "D",
+          "text": "依內容混合選用"
+        }
+      ]
+    },
+    {
+      "id": "Q20",
+      "section": "style",
+      "dimension": null,
+      "style_key": "decoration",
+      "prompt": "你偏好的文字表達風格是？",
+      "type": "single_choice",
+      "required": true,
+      "options": [
+        {
+          "id": "A",
+          "text": "純文字、簡約"
+        },
+        {
+          "id": "B",
+          "text": "適度分段與標點"
+        },
+        {
+          "id": "C",
+          "text": "少量 emoji 與符號"
+        },
+        {
+          "id": "D",
+          "text": "個性鮮明且有辨識度"
+        }
+      ]
+    }
+  ],
+  "scoring": {
+    "behavior": "每維度3題，選項A~D分別為1~4分；標準化百分比＝round((sum-3)/9*100)；只在該維度全部作答後正式計分。",
+    "style": "Q16~Q20 儲存選項 id，不與核心五維分數相加。",
+    "profiles": "產出可改名的初始人格摘要；人格名稱以五維最高兩維與整體強度建議，不作永久標籤。"
+  }
+}
