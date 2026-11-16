@@ -637,6 +637,8 @@ class ProvidersDialog(QDialog):
             self.window.refresh_status()
             self.default_status.setText(f"{row['name']} · {row['model']}")
             self.state.setText("已設為對話預設。")
+            if self.changed:
+                self.changed()
         else:
             self.state.setText("請選擇啟用中的模型。")
 

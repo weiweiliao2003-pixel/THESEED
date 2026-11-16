@@ -100,6 +100,10 @@ class TheseedTests(unittest.TestCase):
                 profile = self.window.providers.profiles()[0]
                 self.assertEqual(profile["model"], "local-chat")
                 self.assertIsNone(self.window.default_provider())
+                wizard.advanced(profile["id"])
+                wizard.editor.set_default()
+                wizard.show_new()
+                self.assertIn("local-chat", wizard.default_label.text())
                 self.assertEqual(self.store.preference(f"provider_meta:{profile['id']}")["input_tokens"], 8192)
                 self.assertEqual(hits, ["/v1/models"])
                 wizard.close()
