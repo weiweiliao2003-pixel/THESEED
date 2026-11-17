@@ -76,11 +76,16 @@ class IssueSevenTests(unittest.TestCase):
         win.resize(700, 550)
         QTest.qWait(140)
         self.assertEqual(chat.drawer.currentIndex(), 2)
+        win.resize(1260, 800)
         for skin in ("nebula", "obsidian"):
             win.set_skin(DEFAULT_SKIN | {"theme": skin})
             win.navigate(7)
             active = next(x for x in win.groups if x.property("currentGroup"))
             self.assertEqual(active.text(), "人格與記憶")
+            marker = active.grab().toImage()
+            scale = marker.devicePixelRatio()
+            y = marker.height() // 2
+            self.assertNotEqual(marker.pixelColor(round(2*scale), y), marker.pixelColor(round(7*scale), y))
             css = self.app.styleSheet()
             self.assertNotIn('currentLocation="true"] { border-bottom', css)
             self.assertIn("navButton:focus { border-style: dashed", css)

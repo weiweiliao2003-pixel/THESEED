@@ -44,8 +44,8 @@ QScrollArea#navScroll QScrollBar::handle:vertical { background: @nav_divider; bo
 QScrollArea#navScroll QScrollBar::add-line:vertical, QScrollArea#navScroll QScrollBar::sub-line:vertical {
     height: 0; background: transparent;
 }
-QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 600; padding: @nav_gap 10px 6px; border-left: 2px solid transparent; }
-QLabel#navGroup[currentGroup="true"] { border-left-color: @nav_marker; }
+QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 600; padding: @nav_gap 12px 6px; }
+QLabel#navGroup[currentGroup="true"] { color: @nav_marker; }
 QFrame#navDivider { background: @nav_divider; max-height: 1px; }
 QPushButton#navButton {
     background: transparent; color: #b5cbd5; text-align: left; font-size: @nav_item; font-weight: 400;

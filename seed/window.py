@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, QThread, QTimer, Qt, Signal, Slot, qVersion
-from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut, QTextBlockFormat, QTextCursor
+from PySide6.QtGui import QFontMetrics, QKeySequence, QPainter, QPalette, QShortcut, QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
@@ -68,6 +68,16 @@ def label(text, role=None):
     if role:
         widget.setObjectName(role)
     return widget
+
+
+class NavigationHeading(QLabel):
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.property("currentGroup"):
+            height = self.fontMetrics().height()
+            painter = QPainter(self)
+            painter.fillRect(1, (self.height() - height) // 2 + 3, 3, height,
+                             self.palette().color(QPalette.ColorRole.WindowText))
 
 
 def action(text, callback, *, primary=False):
@@ -2619,7 +2629,7 @@ class MainWindow(QMainWindow):
                 divider.setFixedHeight(1)
                 links.addWidget(divider)
                 self.dividers.append(divider)
-            heading = label(group, "navGroup")
+            heading = NavigationHeading(group, objectName="navGroup")
             self.groups.append(heading)
             links.addWidget(heading)
             for index in visual_order:
@@ -2807,6 +2817,7 @@ class MainWindow(QMainWindow):
             heading.setProperty("currentGroup", heading.text() == group)
             heading.style().unpolish(heading)
             heading.style().polish(heading)
+            heading.update()
         rail = {1: "chat", 6: "person", 10: "clock", 5: "tree", 9: "settings"}
         group_entry = {"工作空間": 1, "人格與記憶": 6, "技能系統": 5, "系統管理": 9}
         for index, button in enumerate(self.navigation):
