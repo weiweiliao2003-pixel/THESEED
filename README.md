@@ -42,6 +42,18 @@ Windows 發行 ZIP、編譯產物和私人工作區由本機或發行位置管�
 
 交付指令先在獨立目錄檢查候選啟動，再備份原工作區、更新根目錄 `SEED.lnk`，並從捷徑啟動核對。候選版使用新建的隔離工作區。從「設定與備份 → 關於 THESEED」查看建置版本、Commit 和資料路徑。要復原日常入口，用 `publish-preview.ps1 -InstallRoot D:\TheSeed -RestoreShortcut <候選目錄>\rollback\SEED-Previous.lnk`，會以原捷徑的工作區開啟上一版。
 
+探索中隨包的英中翻譯在本機執行。它依作者簡介、已取得的 README 摘錄翻譯並快取；缺少來源時顯示原文或未知。選用連線模型整理資料前會先確認傳送與可能費用。
+
+要重建含兩個選配的本機試用封裝，先從 [Sarasa v1.0.43](https://github.com/be5invis/Sarasa-Gothic/releases/tag/v1.0.43) 取得 `SarasaUiTC-TTF-1.0.43.7z` 的 Regular 與 SemiBold，再從 [Argos 套件索引](https://github.com/argosopentech/argospm-index) 取得 `translate-en_zh-1_9.argosmodel`。
+
+~~~powershell
+.\.venv\Scripts\python.exe -m pip install --only-binary=:all: --target build\catalog-runtime ctranslate2==4.9.0 sentencepiece==0.2.3 numpy==2.5.5 pyyaml==6.0.3
+# 為上述建置命令再加上這些參數
+# -SarasaDirectory <兩個字檔所在資料夾> -TranslationModel <argosmodel 路徑> -TranslationRuntime build\catalog-runtime
+~~~
+
+建置檢查字檔與模型的 SHA-256。字型仍由外觀設定選擇，Noto Sans TC 維持預設。模型、字檔和編譯輸出留在本機發行目錄。
+
 ## 隱私
 
 **不得提交** `Data/`、個人 SQLite 資料庫、附件、私人對話、API Key、Windows 憑證、`.env`、敏感日誌或含個人資料的 QA 檔案。私人 Repository 不是私密資料的安全存放替代方案。

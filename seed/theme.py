@@ -6,13 +6,14 @@ import re
 from pathlib import Path
 
 from PySide6.QtGui import QColor, QFontDatabase, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPlainTextEdit, QTableWidget, QTextBrowser
 
 STYLE = """
 QWidget {
     color: #112638;
     font-family: @family;
-    font-size: 14px;
+    font-size: @body;
+    font-weight: @body_weight;
 }
 QDialog, QMessageBox, QInputDialog { background: @dialog; }
 QMenu, QComboBox QAbstractItemView {
@@ -43,29 +44,29 @@ QScrollArea#navScroll QScrollBar::handle:vertical { background: @nav_divider; bo
 QScrollArea#navScroll QScrollBar::add-line:vertical, QScrollArea#navScroll QScrollBar::sub-line:vertical {
     height: 0; background: transparent;
 }
-QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 700; padding: @nav_gap 10px 6px; }
-QLabel#navGroup[currentGroup="true"] { color: @nav_marker; border-bottom: 2px solid @nav_marker; }
+QLabel#navGroup { color: #f6fbfd; font-size: @nav_heading; font-weight: 600; padding: @nav_gap 10px 6px; border-left: 2px solid transparent; }
+QLabel#navGroup[currentGroup="true"] { border-left-color: @nav_marker; }
 QFrame#navDivider { background: @nav_divider; max-height: 1px; }
 QPushButton#navButton {
     background: transparent; color: #b5cbd5; text-align: left; font-size: @nav_item; font-weight: 400;
-    border: 1px solid transparent; border-left-width: 3px; border-radius: 7px; padding: 0 16px;
+    border: 1px solid transparent; border-radius: 6px; padding: 0 16px;
 }
 QPushButton#navButton[collapsed="true"] { text-align: center; padding: 0; }
-QPushButton#navButton:focus { border-style: dashed; border-color: @nav_focus; border-left-color: transparent; }
-QPushButton#navButton:hover { color: #f6fbfd; background: #214556; border-left-color: @nav_marker; }
-QPushButton#navButton[currentLocation="true"] { border-bottom: 2px solid @nav_marker; }
-QLabel#pageLocation { color: #496270; padding: 5px 18px 3px; font-size: 12px; }
+QPushButton#navButton[currentLocation="true"] { color: #f6fbfd; background: @nav_selected; font-weight: 500; }
+QPushButton#navButton:focus { border-style: dashed; border-color: @nav_focus; }
+QPushButton#navButton:hover { color: #f6fbfd; background: #214556; }
+QLabel#pageLocation { color: #496270; padding: 5px 18px 3px; font-size: @annotation; }
 QFrame#resourceBlock { background: #ffffff; border: 1px solid #d7e2e7; border-radius: 8px; }
-QLabel#resourceTitle { font-size: 17px; font-weight: 700; }
-QLabel#resourceMetric { font-size: 15px; font-weight: 700; }
-QLabel#resourceCaption { color: #496270; font-size: 12px; }
+QLabel#resourceTitle { font-size: @section; font-weight: 600; }
+QLabel#resourceMetric { font-size: @measure; font-weight: 600; }
+QLabel#resourceCaption { color: #496270; font-size: @annotation; }
 QPushButton#answerOption { text-align: left; }
 QPushButton#answerOption:checked { background: #e4eef1; border-color: #1a644f; }
 QProgressBar { background: #e4eef1; border: 1px solid #d7e2e7; border-radius: 4px; }
 QProgressBar::chunk { background: #1a644f; border-radius: 3px; }
-QLabel#pageTitle { font-size: 32px; font-weight: 700; color: #112638; }
-QLabel#sectionTitle { font-size: 17px; font-weight: 700; color: #112638; }
-QLabel#metric { font-size: 34px; font-weight: 600; color: #165845; }
+QLabel#pageTitle { font-size: @page; font-weight: 600; color: #112638; }
+QLabel#sectionTitle { font-size: @section; font-weight: 600; color: #112638; }
+QLabel#metric { font-size: @figure; font-weight: 600; color: #165845; }
 QLabel#muted { color: #496270; }
 QLabel#path { color: #1c604d; }
 QFrame#card {
@@ -73,12 +74,12 @@ QFrame#card {
 }
 QPushButton {
     background: #ffffff; border: 1px solid #b7c9d2; border-radius: 6px;
-    color: #18394b; padding: 7px 13px; font-weight: 600;
+    color: #18394b; padding: 7px 13px; font-weight: 500;
 }
 QPushButton:hover { background: #edf6f3; border-color: #7ea698; }
 QPushButton:pressed { background: #dceee7; }
 QPushButton:focus { border-color: #16735c; }
-QPushButton[primary="true"] { color: #ffffff; background: #1a644f; border-color: #1a644f; }
+QPushButton[primary="true"] { color: #ffffff; background: #1a644f; border-color: #1a644f; font-weight: 600; }
 QPushButton[primary="true"]:hover { background: #125441; }
 QPushButton[primary="true"]:focus { border-color: #071e16; }
 QPushButton:disabled, QPushButton[primary="true"]:disabled {
@@ -93,12 +94,12 @@ QLineEdit:focus, QPlainTextEdit:focus, QListWidget:focus, QComboBox:focus, QTabl
     border-color: #458773;
 }
 QListWidget::item { padding: 8px; }
-QHeaderView::section { background: #e4eef1; padding: 8px; border: none; }
+QHeaderView::section { background: #e4eef1; padding: 7px 9px; border: none; font-weight: 600; }
 QStatusBar { background: #e9f0f3; border-top: 1px solid #d7e2e7; color: #496270; }
-QStatusBar QLabel { font-size: 12px; padding: 4px 10px; }
+QStatusBar QLabel { font-size: @annotation; padding: 4px 10px; }
 QFrame#topBar { border-bottom: 1px solid #d7e2e7; background: #132f40; }
 QLabel#productTitle, QLabel#topStatus { color: #e1edf2; }
-QLabel#productTitle { font-size: 24px; font-weight: 700; padding: 0 6px; }
+QLabel#productTitle { font-size: @brand; font-weight: 600; padding: 0 6px; }
 QFrame#topBar QPushButton { background: transparent; color: #e1edf2; border-color: transparent; }
 QFrame#topBar QPushButton:hover { background: @nav_hover; }
 QFrame#conversationList, QScrollArea#contextDrawer, QWidget#contextBody { background: #e4eef1; }
@@ -109,10 +110,10 @@ QFrame#composer QPlainTextEdit { border: none; background: #ffffff; }
 QFrame#composer QPlainTextEdit:focus { border: 1px solid @focus; }
 QFrame#composer QPushButton { font-weight: 500; }
 QFrame#composer QPushButton[primary="true"] { min-width: 62px; font-weight: 600; }
-QLabel#chatStatus { font-size: 12px; color: #496270; }
+QLabel#chatStatus { font-size: @annotation; color: #496270; }
 QFrame#chatMain, QFrame#emptyChat { background: #f1f5f7; }
 QLabel#welcomeIcon { background: #e4eef1; border-radius: 36px; }
-QLabel#chatName { font-size: 21px; font-weight: 700; }
+QLabel#chatName { font-size: @identity; font-weight: 600; }
 QPushButton#avatar { background: #edf2f4; border-radius: 20px; padding: 0; }
 QPushButton#quickPlus { background: #1a644f; color: @on_accent; font-size: 23px; border-radius: 20px; padding: 0; }
 QTextBrowser#chatTimeline { background: #fbfdfe; padding: 16px 13px; }
@@ -141,8 +142,10 @@ SKINS = {
 }
 DEFAULT_SKIN = {"theme": "nebula", "font": 14, "radius": 8, "border": 1, "density": "normal",
                 "icons": "line", "effects": False, "colors": {}}
-FONT_CHOICES = {"noto": "Noto Sans TC", "huninn": "Huninn 粉圓", "system": "Windows 系統字體"}
+FONT_CHOICES = {"noto": "Noto Sans TC", "sarasa": "Sarasa UI TC", "huninn": "Huninn 粉圓", "system": "Windows 系統字體"}
 WINDOWS_FAMILIES = '"Microsoft JhengHei UI", "Segoe UI"'
+FONT_ROOT = Path(__file__).with_name("resources") / "fonts"
+SARASA_FILES = ("SarasaUiTC-Regular.ttf", "SarasaUiTC-SemiBold.ttf")
 
 
 def ui_font(values):
@@ -150,21 +153,43 @@ def ui_font(values):
     if choice == "system":
         return WINDOWS_FAMILIES
     application = QApplication.instance()
-    source = {"noto": ("NotoSansTC.ttf", "Noto Sans TC"), "huninn": ("Huninn-Regular.ttf", "Huninn")}
+    source = {"noto": (("NotoSansTC.ttf",), "Noto Sans TC"), "huninn": (("Huninn-Regular.ttf",), "Huninn"),
+              "sarasa": (SARASA_FILES, "Sarasa UI TC")}
     loaded_families = []
-    for key in ("huninn", "noto") if choice == "huninn" else ("noto",):
-        filename, preferred = source[key]
+    for key in (choice, "noto") if choice != "noto" else ("noto",):
+        filenames, preferred = source[key]
         prop = f"theseedFont_{key}"
         family = application.property(prop)
         if family is None:
-            file = Path(__file__).with_name("resources") / "fonts" / filename
-            loaded = QFontDatabase.addApplicationFont(str(file))
-            families = QFontDatabase.applicationFontFamilies(loaded) if loaded >= 0 else []
+            families = []
+            for filename in filenames:
+                file = FONT_ROOT / filename
+                if file.is_file():
+                    loaded = QFontDatabase.addApplicationFont(str(file))
+                    if loaded >= 0:
+                        families.extend(QFontDatabase.applicationFontFamilies(loaded))
             family = preferred if preferred in families else (families[0] if families else "")
             application.setProperty(prop, family)
         if family:
             loaded_families.append(f'"{family}"')
     return ", ".join([*loaded_families, WINDOWS_FAMILIES])
+
+
+def document_typography(browser, values):
+    body = values["font"]
+    leading = values.get("typography", {}).get("line_height", 124)
+    browser.document().setDefaultStyleSheet(
+        f"p, li, td {{ line-height: {leading}%; }} h2 {{font-size:{body+7}px;font-weight:600;}} "
+        f"h3 {{font-size:{body+2}px;font-weight:600;}}")
+
+
+def configure_text_widgets(window, values):
+    for editor in window.findChildren(QPlainTextEdit):
+        editor.document().setDocumentMargin(5)
+    for browser in window.findChildren(QTextBrowser):
+        document_typography(browser, values)
+    for table in window.findChildren(QTableWidget):
+        table.verticalHeader().setDefaultSectionSize(max(28, table.fontMetrics().height() + 10))
 
 
 def validate_skin(values):
@@ -229,7 +254,12 @@ def apply_skin(window, values):
         return QColor(*(round(base + (value - base) * ratio) for base, value in
                         zip(nav.getRgb()[:3], text.getRgb()[:3], strict=True))).name()
     nav_font = navigation_token(values, "font")
-    colors.update(nav_divider=blended(.26), nav_hover=blended(.16), nav_child=blended(.82),
+    size = values["font"]
+    colors.update({key: f"{value}px" for key, value in {
+        "body": size, "annotation": max(11, size-2), "section": size+3, "measure": size+1,
+        "page": size+14, "figure": size+15, "brand": size+8, "identity": size+5}.items()})
+    colors["body_weight"] = "500" if values.get("typography", {}).get("weight") == "medium" else "400"
+    colors.update(nav_divider=blended(.26), nav_hover=blended(.20), nav_selected=blended(.11), nav_child=blended(.82),
                   nav_marker=blended(.95), nav_focus=blended(.80),
                   nav_heading=f"{nav_font+4}px", nav_item=f"{nav_font}px",
                   nav_gap=f"{navigation_token(values, 'group_gap')}px")
@@ -248,9 +278,6 @@ def apply_skin(window, values):
     template = template.replace('color: #ffffff; background: #285548', 'color: @on_accent; background: #285548')
     template = re.sub(r"#[0-9a-f]{6}|@[a-z_]+",
                       lambda match: colors.get(source_colors.get(match[0], match[0].lstrip("@")), match[0]), template)
-    if values.get("typography", {}).get("weight") == "medium":
-        template = template.replace("font-size: 14px;\n}", "font-size: 14px; font-weight: 500;\n}", 1)
-    template = re.sub(r"font-size: (\d+)px", lambda m: f"font-size: {int(m[1]) + values['font'] - 14}px", template)
     template = re.sub(r"border-radius: \d+px", f"border-radius: {values['radius']}px", template)
     template = template.replace("1px solid", f"{values['border']}px solid")
     if values["density"] == "compact":
@@ -265,6 +292,7 @@ def apply_skin(window, values):
     application = QApplication.instance()
     if application.styleSheet() == template:
         window.setPalette(application.palette())
+        configure_text_widgets(window, values)
         return
     palette = QPalette(application.style().standardPalette())
     for role, color in ((QPalette.ColorRole.Window, "dialog"), (QPalette.ColorRole.Base, "field"),
@@ -280,6 +308,7 @@ def apply_skin(window, values):
     application.setPalette(palette)
     application.setStyleSheet(template)
     window.setPalette(palette)
+    configure_text_widgets(window, values)
 
 
 def navigation_token(skin, key):

@@ -1,0 +1,12 @@
+English to Chinese, Argos Translate package translate-en_zh-1_9, is used for local
+translation of public descriptions and document excerpts. The four packaged files
+come unmodified from https://argos-net.com/v1/translate-en_zh-1_9.argosmodel.
+Official package index: https://github.com/argosopentech/argospm-index
+
+The package README attributes the original OPUS-MT model to Jörg Tiedemann and
+Santhosh Thottingal, "OPUS-MT — Building open translation services for the World",
+EAMT 2020, Lisbon. https://aclanthology.org/2020.eamt-1.61/
+The package README identifies the original model license as CC BY 4.0:
+https://creativecommons.org/licenses/by/4.0/
+Argos upstream distribution statement:
+https://github.com/argosopentech/argos-translate/issues/533

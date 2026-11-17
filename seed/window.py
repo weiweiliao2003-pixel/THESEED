@@ -38,9 +38,10 @@ from seed.providers import ProviderService
 from seed.model_router import ModelRouter, RoutedRequest
 from seed.retrieval import correct_memory_sources, index_memory, remove_item, search_memories
 from seed.store import PROVIDERS, Store
-from seed.state import DEFAULT_IDENTITY, WorkspaceState, write_event, continuity
+from seed.state import WorkspaceState, write_event, continuity
 from seed.theme import DEFAULT_SKIN, apply_skin, colors_for, navigation_token
 from seed.topics import task_for
+from seed.turn_usage import profile_snapshot
 
 
 PAGES = [
@@ -240,7 +241,7 @@ class Conversations(Page):
         heading.addWidget(self.avatar)
         names = QVBoxLayout()
         names.setSpacing(1)
-        self.identity_name = label("種子", "chatName")
+        self.identity_name = label(window.state.name, "chatName")
         self.title = label("會話", "muted")
         names.addWidget(self.identity_name)
         names.addWidget(self.title)
@@ -373,7 +374,7 @@ class Conversations(Page):
             column.addWidget(tile)
             self.drawer_fields.append(field)
         column.addStretch()
-        self.resource_summary = ResourceSummary(window, lambda: window.navigate(RESOURCE_PAGE), lambda: self.set_drawer("rail"))
+        self.resource_summary = ResourceSummary(window, lambda: window.navigate(RESOURCE_PAGE), lambda: self.set_drawer("rail"), self.open_turn)
         resource_scroll = QScrollArea(widgetResizable=True)
         resource_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         resource_scroll.setWidget(self.resource_summary)
@@ -460,13 +461,15 @@ class Conversations(Page):
 
     def adapt_layout(self):
         mode = "rail" if self.width() < 690 else self.right_mode
-        width, upper = {"api": (164, 164), "related": (250, 560), "rail": (40, 40)}[mode]
+        api_width = min(240, max(212, round(self.width() * .22)))
+        width, upper = {"api": (api_width, api_width), "related": (250, 560), "rail": (40, 40)}[mode]
+        drawer_width = min(self.related_width, max(width, self.width() - 370)) if mode == "related" else width
         self.drawer.setMinimumWidth(width)
         self.drawer.setMaximumWidth(upper)
         self.drawer.setCurrentIndex({"api": 0, "related": 1, "rail": 2}[mode])
-        self.sidebar.setVisible(self.session_vis and self.width() >= (910 if mode == "related" else 750))
-        sidebar_width = 0 if self.sidebar.isHidden() else self.conversation_width()
-        drawer_width = self.related_width if mode == "related" else width
+        left = min(320, max(180, self.conversation_width()))
+        self.sidebar.setVisible(self.session_vis and self.width() >= max(750, left + drawer_width + 365))
+        sidebar_width = 0 if self.sidebar.isHidden() else left
         self.split.setSizes([sidebar_width, max(300, self.width() - sidebar_width - drawer_width - 12), drawer_width])
         if mode == "api":
             self.resource_summary.update_timer.start()
@@ -614,7 +617,7 @@ class Conversations(Page):
                 kind = "影片抽樣" if attachment["kind"] == "video" else "圖片"
                 blocks.append(f'<p><a href="seed:attachment/{attachment["id"]}">{kind} · {html.escape(attachment["name"])}</a></p>')
             if row["role"] == "assistant":
-                blocks.append(f'<p><a href="seed:response/{row["id"]}" style="color:{colors["muted"]}">模型與來源</a></p>')
+                blocks.append(f'<p><a href="seed:response/{row["id"]}" style="color:{colors["muted"]}">本輪模型、Token 與來源</a></p>')
             if row["id"] in partials:
                 blocks.append(self.bubble(name, "已中止 · 未完成片段", partials[row["id"]], False, colors))
         job = self.requests.get(self.selected())
@@ -976,7 +979,7 @@ class Conversations(Page):
     def refresh_identity(self):
         name = self.window.state.name
         self.identity_name.setText(name)
-        self.input.set_hint(f"和 {PRODUCT_NAME if name == DEFAULT_IDENTITY else name} 說點什麼……")
+        self.input.set_hint(f"和 {name} 說點什麼……")
         colors = colors_for(self.window.skin)
         self.plus.setIcon(icon("plus", colors["on_accent"]))
         self.plus.setIconSize(QSize(21, 21))
@@ -1156,6 +1159,13 @@ class Conversations(Page):
                 self.window.pages[12].select_id(notice["idea_id"])
             else:
                 self.render_messages()
+
+    def open_turn(self):
+        rows = self.store.read("SELECT id FROM context_runs WHERE conversation_id=? ORDER BY id DESC LIMIT 1", self.selected())
+        if rows:
+            self.window.pages[14].show_run(rows[0]["id"])
+        else:
+            self.window.notice("目前會話尚無模型呼叫紀錄。")
 
     def diagnose(self):
         conversation = self.selected()
@@ -1416,7 +1426,11 @@ class Conversations(Page):
             task = self.store.preference(f"chat_task:{conversation}") or task_for(body)
             routing = {"task": task, "strategy": self.store.preference("routing_strategy", "balanced"),
                        "manual": self.model.currentData() is not None, "response": [item["id"] for item in route],
-                       "review": reviewer["id"] if reviewer else None}
+                       "review": reviewer["id"] if reviewer else None,
+                       "enabled_profiles": [profile_snapshot(row) for row in self.window.providers.profiles() if row["enabled"]],
+                       "planned_profiles": [profile_snapshot(row) | {"role": "主要" if index == 0 else "備援"}
+                                            for index, row in enumerate(route)] +
+                                           ([profile_snapshot(reviewer) | {"role": "校對"}] if reviewer else [])}
             db.execute("UPDATE context_runs SET source_refs=json_set(source_refs,'$.routing',json(?)) WHERE id=?",
                        (json.dumps(routing), run))
             db.execute("UPDATE context_runs SET status='running' WHERE id=?", (run,))
@@ -2099,11 +2113,10 @@ class Persona(Page):
         self.layout.addWidget(overview)
         form_card, left = card()
         left.addWidget(label("手動微調", "sectionTitle"))
-        self.name = QLineEdit(placeholderText="例如：種子")
-        self.name.setAccessibleName("稱呼")
+        self.name = QLineEdit(placeholderText="例如：日常協作")
         self.tone = QPlainTextEdit(placeholderText="例如：直接、簡潔，有需要再補充例子。")
         self.boundaries = QPlainTextEdit(placeholderText="例如：對敏感資訊先徵詢同意。")
-        for text, field in [("希望怎麼稱呼 SEED？", self.name), ("希望 SEED 如何表達？", self.tone),
+        for text, field in [("人格版本名稱", self.name), ("希望 SEED 如何表達？", self.tone),
                             ("有哪些互動界線？", self.boundaries)]:
             left.addWidget(label(text))
             field.setAccessibleName(text)
@@ -2123,6 +2136,7 @@ class Persona(Page):
         right.addWidget(self.history)
         right.addWidget(self.preview_text, 1)
         right.addWidget(self.restore, 0, Qt.AlignmentFlag.AlignLeft)
+        right.addWidget(action("將所選版本名稱用作個體名稱", self.use_version_name), 0, Qt.AlignmentFlag.AlignLeft)
         right.addWidget(action("與目前版本比較", self.compare), 0, Qt.AlignmentFlag.AlignLeft)
         right.addWidget(action("從經歷觀測到的成長", lambda: window.navigate(15)), 0, Qt.AlignmentFlag.AlignLeft)
         row = QHBoxLayout()
@@ -2132,6 +2146,14 @@ class Persona(Page):
         self.layout.addLayout(row, 1)
         self.versions = {}
         self.loaded_values = None
+
+    def use_version_name(self):
+        item = self.versions.get(self.history.currentData())
+        if item and item["name"].strip() and self.window.confirm("更新個體顯示名稱",
+                f"使用「{item['name']}」作為此工作區的個體名稱？人格版本照常保留。"):
+            self.perform(lambda: self.window.set_identity_name(item["name"]))
+        elif not item or not item["name"].strip():
+            self.window.notice("請先選擇已儲存且有名稱的人格版本。")
 
     def form_values(self):
         return self.name.text(), self.tone.toPlainText(), self.boundaries.toPlainText()
@@ -2145,8 +2167,8 @@ class Persona(Page):
         self.versions = {row["id"]: row for row in rows}
         latest = rows[0] if rows else None
         profile = json.loads(latest["profile"]) if latest and latest["profile"] else None
-        self.current_card.setText(f"{self.window.state.name} · {latest['name'] or '未命名'} · 版本 {latest['id']}" if latest
-                                  else f"{self.window.state.name} · 尚未套用人格卡")
+        version = f"人格版本 {latest['id']} · {latest['name'] or '未命名'}" if latest else "尚未套用人格卡"
+        self.current_card.setText(f"個體顯示名稱 · {self.window.state.name}\n{version}")
         self.current_profile.setText(f"{profile['summary']}\n{profile_description(profile)}\n更新 {latest['created_at']} UTC" if profile
                                      else f"{latest['tone']}\n更新 {latest['created_at']} UTC" if latest else "完成問卷後可預覽並送交審核。")
         self.current_radar.setVisible(profile is not None)
@@ -2338,6 +2360,9 @@ class Settings(Page):
 
         panel, layout = card()
         layout.addWidget(label(f"關於 {PRODUCT_NAME}", "sectionTitle"))
+        self.individual_name = label("", "muted")
+        layout.addWidget(self.individual_name)
+        self.refresh_identity()
         build = window.build
         layout.addWidget(label(build.title, "body"))
         if build.commit:
@@ -2357,9 +2382,13 @@ class Settings(Page):
         self.loaded = False
 
     def refresh(self):
+        self.refresh_identity()
         if not self.loaded:
             self.load()
             self.loaded = True
+
+    def refresh_identity(self):
+        self.individual_name.setText(f"個體顯示名稱 · {self.window.state.name}")
 
     def load(self):
         values = self.store.settings()
@@ -2758,6 +2787,8 @@ class MainWindow(QMainWindow):
         self.pages[1].refresh_identity()
         self.pages[1].media.layout_timer.start()
         self.pages[1].refresh_actions()
+        if self.stack.currentIndex() == 16:
+            self.pages[16].show_details()
 
     def update_navigation(self):
         narrow = self.collapsed or self.width() < 1000
@@ -2836,11 +2867,15 @@ class MainWindow(QMainWindow):
     def rename_identity(self):
         name, ok = QInputDialog.getText(self, "為個體命名", "顯示名稱（留空使用「種子」）", text=self.state.name)
         if ok:
-            def rename():
-                self.state.rename(name)
-                self.pages[1].refresh_identity()
-                self.pages[6].refresh()
-            self.pages[1].perform(rename)
+            self.pages[1].perform(lambda: self.set_identity_name(name))
+
+    def set_identity_name(self, name):
+        self.state.rename(name)
+        self.pages[1].refresh_identity()
+        self.pages[6].refresh()
+        self.pages[SETTINGS_PAGE].refresh_identity()
+        if self.stack.currentIndex() == 15:
+            self.pages[15].refresh()
 
     def review_growth(self):
         try:

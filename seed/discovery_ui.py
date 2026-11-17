@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
 
 from seed.discovery import (API, MAX_DOCUMENT, TREND_PERIODS, PublicRead, document_url, parse_document, repo_name,
                             save_repository, snapshot)
+from seed.catalog_translation import TranslateCatalog, cache_key, evidence_fields, installed, needs_translation
 from seed.exploration import (SOURCES, catalog_projects, catalog_url, confirmed_open_source, explain, license_status,
                               public_link, repo_project, summary)
 from seed.input_fields import FocusHintEdit
@@ -34,6 +35,9 @@ class DiscoveryPage(ListPage):
         self.catalog_url = ""
         self.catalog_context = ""
         self.started_catalog = False
+        self.translation_worker = None
+        self.translation_failed = False
+        self.translation_attempted = set()
         for name in ("開源探索", "追蹤與收藏", "來源快照", "研究候選"):
             self.tabs.addTab(name)
         self.panel.insertWidget(0, self.tabs)
@@ -226,6 +230,8 @@ class DiscoveryPage(ListPage):
                     details.setdefault(record["source"], extras)
         for item in projects:
             item.update(details.get(item["url"], {}))
+        self.localize_catalog(projects)
+        for item in projects:
             if self.open_filter.isChecked() and not confirmed_open_source(item):
                 continue
             if item["url"] in briefs:
@@ -233,9 +239,8 @@ class DiscoveryPage(ListPage):
             short, provenance = summary(item)
             if item.get("brief"):
                 paragraphs = [line.strip() for line in item["brief"].splitlines() if line.strip() and not line.startswith(("模型草稿", "來源 #"))]
-                short, provenance = (paragraphs[0][:135] if paragraphs else short), "已保存的繁中整理"
-            elif provenance == "來源狀態" and item["description"]:
-                short = f"{short} {item['description'][:100]}"
+                provenance = "AI 摘要 · 已確認保存" if item["brief"].startswith("模型草稿") else "已保存的繁中整理"
+                short = paragraphs[0][:135] if paragraphs else short
             entry = QListWidgetItem(self.project_list)
             entry.setData(ITEM_ID, item)
             entry.setSizeHint(QSize(245, 87))
@@ -260,6 +265,53 @@ class DiscoveryPage(ListPage):
             self.project_list.setCurrentRow(0)
         self.project_list.blockSignals(blocked)
         self.show_project()
+
+    def localize_catalog(self, projects):
+        sources = {}
+        fields = []
+        for item in projects:
+            item["localized"] = {}
+            for field, text in evidence_fields(item).items():
+                if needs_translation(text):
+                    key = cache_key(item, field, text)
+                    fields.append((item, field, key))
+                    sources[key] = text
+        if not sources:
+            return
+        placeholders = ",".join("?" for _ in sources)
+        rows = self.store.read(f"SELECT key,value FROM workspace WHERE key IN ({placeholders})", *sources)
+        cached = {row["key"]: json.loads(row["value"]) for row in rows}
+        for item, field, key in fields:
+            if cached.get(key):
+                item["localized"][field] = cached[key]
+        new = {key: value for key, value in sources.items() if key not in cached and key not in self.translation_attempted}
+        if not new or self.translation_worker or self.translation_failed or not installed() or self.window.closing:
+            return
+        self.translation_attempted.update(new)
+        worker = TranslateCatalog(new, self)
+        self.translation_worker = worker
+        worker.result.connect(self.save_translations)
+        worker.finished.connect(self.translation_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def save_translations(self, results, ok):
+        if self.window.closing:
+            return
+        if not ok:
+            self.translation_failed = True
+            self.status.setText("本機翻譯暫不可用，仍可查看作者原文與已擷取資料。")
+            return
+        def save():
+            with self.store.connection() as db:
+                db.executemany("INSERT OR REPLACE INTO workspace VALUES (?,?)",
+                               ((key, json.dumps(value, ensure_ascii=False)) for key, value in results.items()))
+        self.perform(save)
+
+    def translation_finished(self):
+        self.translation_worker = None
+        if not self.window.closing and self.tabs.currentIndex() == 0:
+            self.render_catalog(self.catalog, self.catalog_url, self.catalog_context)
 
     def show_project(self, *_):
         title, order, source = SOURCES[self.source.currentData()]
@@ -292,11 +344,18 @@ class DiscoveryPage(ListPage):
         if item.get("gated"):
             html.append("<p>權重下載受存取條款限制。</p>")
         if item.get("overview"):
-            excerpt = escape(item["overview"][:4500]).replace(chr(10), "<br>")
-            html.append(f"<h3>README 原文摘錄</h3><p>擷取 {escape(item.get('inspected_at', '本次'))} UTC</p><p>{excerpt}</p>")
+            obtained = escape(item.get("inspected_at", "本次"))
+            evidence = evidence_fields(item).get("readme")
+            translation = (item.get("localized") or {}).get("readme")
+            if translation:
+                features = escape(translation).replace(chr(10), "<br>")
+                html.append(f"<h3>README 說明 · 本機翻譯</h3><p>{features}</p>")
+            excerpt = escape(evidence or item["overview"][:1750]).replace(chr(10), "<br>")
+            html.append(f"<h3>README 原文摘錄</h3><p>擷取 {obtained} UTC</p><p>{excerpt}</p>")
         if item.get("brief"):
             briefing = escape(item["brief"][:9000]).replace(chr(10), "<br>")
-            html.append(f"<h3>已保存的繁中整理</h3><p>{briefing}</p>")
+            heading_title = "AI 摘要 · 已確認保存" if item["brief"].startswith("模型草稿") else "已保存的繁中整理"
+            html.append(f"<h3>{heading_title}</h3><p>{briefing}</p>")
         html.append(f"<h3>榜單來源</h3>{heading}</p>")
         self.details.setHtml("".join(html))
 
@@ -375,7 +434,7 @@ class DiscoveryPage(ListPage):
         self.fetch(base, lambda *result: received(0, *result), github=True)
 
     def project_snapshot(self, item):
-        meta = {k: v for k, v in item.items() if k not in {"overview", "brief", "inspected_at"}}
+        meta = {k: v for k, v in item.items() if k not in {"overview", "brief", "inspected_at", "localized"}}
         meta["has_overview"] = bool(item.get("overview"))
         return snapshot(self.store, item["url"], item.get("overview") or item["description"] or summary(item)[0], item["name"],
                         {"project_brief": 1, "metadata": meta,
@@ -456,6 +515,9 @@ class DiscoveryPage(ListPage):
     def shutdown(self):
         self.timer.stop()
         self.cancel()
+        if self.translation_worker:
+            self.translation_worker.requestInterruption()
+            self.translation_worker.wait()
 
     def read_repo(self):
         value, ok = QInputDialog.getText(self, "讀取 GitHub 公開專案", "owner/repository 或專案網址")

@@ -6,16 +6,18 @@ import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QSaveFile, QIODevice, QTimer, Qt
+from PySide6.QtGui import QFontInfo
 from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog, QFormLayout,
                                QHBoxLayout, QInputDialog, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
-                               QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
+                               QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from seed.backup import backup_workspace, open_backup, restore_into
 from seed.context_budget import for_metadata
 from seed.input_fields import FocusHintEdit
 from seed.model_catalog import PURPOSE_LABELS, use_cases
 from seed.providers import BASES, KINDS
-from seed.theme import DEFAULT_SKIN, FONT_CHOICES, SKINS, colors_for, navigation_token, read_skin, theme_document
+from seed.theme import (DEFAULT_SKIN, FONT_CHOICES, FONT_ROOT, SARASA_FILES, SKINS, colors_for, document_typography,
+                        navigation_token, read_skin, theme_document)
 from seed.window import ITEM_ID, Page, action, card, label, replace_items, toolbar
 
 
@@ -56,7 +58,10 @@ class SkinDialog(QDialog):
                            "border": "界線寬度", "effects": "動效"}.items():
             form.addRow(title, self.controls[key])
         self.weight = choices({"normal": "一般", "medium": "中等"})
-        self.family = choices(FONT_CHOICES)
+        fonts = dict(FONT_CHOICES)
+        if not all((FONT_ROOT / name).is_file() for name in SARASA_FILES):
+            fonts["sarasa"] = "Sarasa UI TC（此版本使用 Noto 替代）"
+        self.family = choices(fonts)
         self.line_height = QSpinBox(minimum=100, maximum=160, suffix="%")
         form.addRow("字型", self.family)
         form.addRow("字重", self.weight)
@@ -80,8 +85,11 @@ class SkinDialog(QDialog):
         preview, sample = card()
         self.preview_title = label("", "sectionTitle")
         sample.addWidget(self.preview_title)
-        sample.addWidget(label("和 THESEED 聊聊", "pageTitle"))
-        sample.addWidget(label("對話會自動保存。", "muted"))
+        sample.addWidget(label("中文與英數", "pageTitle"))
+        self.preview_text = QTextBrowser(openLinks=False)
+        self.preview_text.setMinimumHeight(145)
+        sample.addWidget(self.preview_text, 1)
+        sample.addWidget(label("128,512 Token · USD 0.015", "resourceMetric"))
         sample.addWidget(QLineEdit(placeholderText="輸入訊息預覽…"))
         sample.addWidget(choices({"chat": "智慧對話", "history": "經歷時間線"}))
         sample.addWidget(QCheckBox("顯示相關經歷"))
@@ -140,8 +148,11 @@ class SkinDialog(QDialog):
         self.preview()
 
     def preview(self):
-        self.preview_title.setText("即時預覽 · " + SKINS[self.controls["theme"].currentData()][0])
-        self.window.set_skin(self.values())
+        values = self.values()
+        self.window.set_skin(values)
+        self.preview_title.setText(f"即時預覽 · {SKINS[values['theme']][0]} · {QFontInfo(self.preview_title.font()).family()}")
+        document_typography(self.preview_text, values)
+        self.preview_text.setHtml("<h3>模型與上下文</h3><p>保留繁體中文字形、API 用語與數字。<br>同一段落可檢查換行和行距。</p>")
 
     def save(self):
         try:
