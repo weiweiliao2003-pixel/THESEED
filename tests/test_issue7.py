@@ -8,7 +8,7 @@ from PySide6.QtGui import QFontInfo
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
-from seed.catalog_translation import cache_key, evidence_fields, needs_translation
+from seed.catalog_translation import cache_key, evidence_fields, needs_translation, polish_translation
 from seed.exploration import summary
 from seed.store import Store
 from seed.theme import DEFAULT_SKIN
@@ -145,6 +145,7 @@ class IssueSevenTests(unittest.TestCase):
         evidence = evidence_fields(project)
         self.assertEqual(evidence["readme"], "Run transcription against local sound files.")
         self.assertTrue(needs_translation(evidence["description"]))
+        self.assertEqual(polish_translation("語音識別▁API 后端"), "語音辨識 API 後端")
         self.assertNotIn("readme", evidence_fields(project | {"readme": ""}))
         self.assertEqual(summary(dict(description="One descriptive sentence with unknown terms."))[0],
                          "One descriptive sentence with unknown terms.")

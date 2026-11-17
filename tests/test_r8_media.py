@@ -213,6 +213,7 @@ class MediaTests(unittest.TestCase):
 
     def test_voice_result_stays_with_original_conversation(self):
         original = self.store.write("INSERT INTO conversations(title) VALUES ('來源會話')")
+        self.store.write("INSERT INTO conversation_drafts(conversation_id,body,scroll) VALUES (?,'',-1)", original)
         chat = self.show()
         with patch.object(chat, "selected", return_value=None):
             chat.input.setPlainText("目前草稿")
