@@ -1,11 +1,13 @@
 """Shared resource summaries and the filterable request history."""
 
 import json
+from html import escape
 from datetime import datetime, time, timedelta, timezone
 
-from PySide6.QtCore import QDate, Qt, QTimer
+from PySide6.QtCore import QDate, QEvent, Qt, QTimer
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (QComboBox, QDateEdit, QDialog, QFormLayout, QFrame, QHeaderView,
-                               QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from seed.window import Page, action, label, toolbar
 
@@ -17,8 +19,34 @@ STATUS = {"running": "傳送中", "done": "完成", "failed": "失敗", "cancele
 TOKEN_NAMES = {"input": "輸入", "output": "輸出", "cached": "快取", "reasoning": "思考", "total": "總量", "tool_input": "工具輸入"}
 
 
+class ModelLabel(QLabel):
+    def __init__(self):
+        super().__init__(objectName="resourceMetric")
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.model = ""
+
+    def set_model(self, name, tooltip=""):
+        self.model = name
+        full = tooltip or name
+        self.setToolTip(f"<qt>{escape(full).replace(chr(10), '<br>')}</qt>" if "<" in full else full)
+        self.update_text()
+
+    def update_text(self):
+        self.setText(QFontMetrics(self.font()).elidedText(self.model, Qt.TextElideMode.ElideRight, self.contentsRect().width()))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_text()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange and hasattr(self, "model"):
+            self.update_text()
+
+
 class ResourceSummary(QWidget):
-    def __init__(self, window, show_detail, collapse):
+    def __init__(self, window, show_detail, collapse, show_turn=None):
         super().__init__()
         self.window = window
         self.meter = window.providers.meter
@@ -27,10 +55,14 @@ class ResourceSummary(QWidget):
         column.setContentsMargins(10, 14, 10, 10)
         column.setSpacing(10)
         column.addWidget(label("API 資源", "resourceTitle"))
-        self.model, self.tokens = self.add_block(column, ("模型", "單次 Token"))
+        self.model = ModelLabel()
+        self.model_status = label("", "resourceCaption")
+        self.model, self.tokens = self.add_block(column, ("模型", "單次 Token"), model=self.model, model_status=self.model_status)
         self.daily_cost, self.monthly_cost = self.add_block(column, ("今日估算費用", "本月估算費用"))
         self.quota, self.rate = self.add_block(column, ("免費額度", "費率版本"), compact=True)
         column.addStretch(1)
+        if show_turn:
+            column.addWidget(action("本會話最近一輪", show_turn))
         column.addWidget(action("詳細統計", show_detail))
         column.addWidget(action("收合", collapse))
         self.update_timer = QTimer(self, interval=220, singleShot=True)
@@ -38,7 +70,7 @@ class ResourceSummary(QWidget):
         self.meter.changed.connect(self.update_timer.start)
 
     @staticmethod
-    def add_block(column, headings, *, compact=False):
+    def add_block(column, headings, *, compact=False, model=None, model_status=None):
         block = QFrame(objectName="resourceBlock")
         layout = QVBoxLayout(block)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -48,9 +80,11 @@ class ResourceSummary(QWidget):
             if values:
                 layout.addSpacing(6)
             layout.addWidget(label(heading, "resourceCaption"))
-            value = label("—", None if compact else "resourceMetric")
+            value = model if heading == "模型" and model is not None else label("—", None if compact else "resourceMetric")
             value.setAccessibleName(heading)
             layout.addWidget(value)
+            if value is model:
+                layout.addWidget(model_status)
             values.append(value)
         column.addWidget(block)
         return values
@@ -68,11 +102,15 @@ class ResourceSummary(QWidget):
         active = self.meter.now()
         last = self.meter.latest()
         if active:
-            self.model.setText("\n".join(row["model_returned"] or row["model"] for row in active) + "\n呼叫中")
+            names = [row["model_returned"] or row["model"] for row in active]
+            self.model.set_model(names[0], "\n".join(names))
+            self.model_status.setText("呼叫中" + (f" · 共 {len(names)} 筆" if len(names) > 1 else ""))
         elif last:
-            self.model.setText((last["model_returned"] or last["model"]) + "\n上次呼叫")
+            self.model.set_model(last["model_returned"] or last["model"])
+            self.model_status.setText("上次呼叫")
         else:
-            self.model.setText("尚無呼叫")
+            self.model.set_model("尚無呼叫")
+            self.model_status.clear()
         observations = active or ([last] if last else [])
         usage = []
         for row in observations:

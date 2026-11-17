@@ -169,6 +169,10 @@ def explain(item):
 
 
 def summary(item):
+    localized = item.get("localized") or {}
+    for field, basis in (("description", "作者簡介"), ("readme", "README 摘錄")):
+        if localized.get(field):
+            return localized[field], f"本機翻譯 · {basis}"
     description = item.get("description", "")
     if len(re.findall(r"[\u3400-\u9fff]", description)) >= 4:
         from seed.dictation import traditional_chinese
@@ -181,4 +185,4 @@ def summary(item):
     topic, _, _ = explain(item)
     if topic:
         return f"用途為{topic}。", "依公開欄位整理"
-    return ("繁中摘要待整理，請參考原始簡介。" if description else "尚無專案介紹。"), "來源狀態"
+    return (description if description else "尚無專案介紹。"), ("作者原文 · 尚無繁中翻譯" if description else "來源狀態")

@@ -354,7 +354,9 @@ class ChatMedia(QObject):
             else:
                 with store.connection() as db:
                     changed = db.execute("""INSERT INTO conversation_drafts SELECT id,?,-1 FROM conversations WHERE id=?
-                        ON CONFLICT(conversation_id) DO UPDATE SET body=trim(body||char(10)||excluded.body)""", (text, previous))
+                        ON CONFLICT(conversation_id) DO UPDATE SET body=CASE
+                            WHEN trim(body,char(9)||char(10)||char(13)||' ')='' THEN excluded.body
+                            ELSE body||char(10)||excluded.body END""", (text, previous))
                     if not changed.rowcount:
                         raise ValueError("錄音開始時的會話已刪除，逐字稿未加入其他草稿。")
             location = "草稿，可直接編輯" if visible_draft else "原會話的草稿"

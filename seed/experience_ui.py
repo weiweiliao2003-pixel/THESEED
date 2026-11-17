@@ -2,6 +2,8 @@
 
 import json
 
+from seed.turn_usage import describe_turn, turn_calls
+
 from PySide6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QInputDialog, QLineEdit, QPlainTextEdit, QVBoxLayout
 
 from seed.window import action, label, toolbar
@@ -128,10 +130,8 @@ class ExperiencePage(ListPage):
             if observed:
                 state = "已撤銷" if observed[0]["disposition"] == "dismissed" else "本輪推測"
                 titles.append(f"{state} · {cue['label']} · 經歷 #{cue['event_id']} · 到期 {observed[0]['valid_until']} UTC")
-        calls = self.store.read("SELECT * FROM model_calls WHERE run_id=? ORDER BY id", trace["id"])
+        calls = turn_calls(self.store, trace["id"], refs)
         for row in calls:
-            stage = "校對" if row["stage"] == "review" else "回應"
-            titles.append(f"{stage} #{row['id']} · {row['model']} · {row['status']} · {row['duration_ms'] or 0} ms · {row['usage'] or '無用量回報'}")
             payload = refs.get("model_payloads", {}).get(str(row["id"]))
             if payload:
                 histories = len(payload["dialogue_events"])
@@ -144,18 +144,20 @@ class ExperiencePage(ListPage):
                     stamp = item.get("timestamp_ms")
                     kind = "圖片" if stamp is None else f"抽樣影格 {stamp/1000:.3f} 秒"
                     titles.append(f"{kind} · {item['mime']} · SHA-256 {item['sha256']}")
-        summary = (f"模型 {trace['model']} · 狀態 {trace['status']}\n"
+        summary = (describe_turn(refs, calls) + "\n\n上下文來源\n"
+                   f"回合 #{trace['id']} · 狀態 {trace['status']}\n"
                    f"人格版本 {trace['persona_version'] or '無'}\n歷史上限 {trace['history_limit']} 則，"
                    + ("" if budget else f"對話預算 {trace['character_limit']} 字元") + "\n\n" + "\n".join(titles))
-        if not recalled:
-            self.window.info("上下文來源", summary)
-            return
-        dialog = QDialog(self, windowTitle="上下文來源")
-        dialog.resize(630, 460)
+        dialog = QDialog(self, windowTitle="本輪模型、Token 與來源")
+        dialog.resize(740, 520)
         layout = QVBoxLayout(dialog)
         details = QPlainTextEdit(readOnly=True)
         details.setPlainText(summary)
         layout.addWidget(details)
+        if not recalled:
+            toolbar(layout, action("關閉", dialog.reject))
+            dialog.exec()
+            return
         choices = QComboBox()
         for source in recalled:
             choices.addItem(f"經歷 #{source['id']} · {source['conversation_title']}", source["id"])
