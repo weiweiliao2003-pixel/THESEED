@@ -163,6 +163,18 @@ class ContinuityTests(unittest.TestCase):
         self.assertIn(str(store.root), settings)
         self.assertFalse(any("人格 Core" in text for text in overview))
 
+    def test_candidate_unlinks_keys_without_removing_windows_recovery_items(self):
+        store = self.workspace("Shared vault", provider=True)
+        window = MainWindow(store, build=runtime_info(continuous=True))
+        self.addCleanup(window.close)
+        service = window.providers
+        with patch.object(service.vault, "delete") as delete, patch.object(service.vault, "put", return_value="d" * 32):
+            self.assertEqual(service.rotate_service("p1", "replacement_fixture"), 1)
+            self.assertEqual(service.profile("p1")["secret_ref"], "d" * 32)
+            service.remove_secret(service.profile("p2"))
+            self.assertEqual(service.profile("p2")["secret_ref"], "")
+            delete.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,10 +37,22 @@ Windows 發行 ZIP、編譯產物和私人工作區由本機或發行位置管�
 
 ~~~powershell
 .\build-windows.ps1 -OutputDirectory dist\preview -SkipArchive -WhisperArchive <zip> -WhisperModel <bin>
+.\publish-preview.ps1 -InstallRoot D:\TheSeed -Bundle dist\preview\SEED -Commit (git rev-parse HEAD) -VerifyOnly
+~~~
+
+`-VerifyOnly` 只開啟隔離驗證，不會更換日常捷徑。首次恢復日常使用前，先對既有來源做本機備份與副本驗證。
+
+~~~powershell
+.\publish-preview.ps1 -InstallRoot D:\TheSeed -PrepareWorkspaceFrom <現有資料夾>
+# 核對來源；有多份增量時保留各份，等使用者確認採用哪一份或如何整併
+.\publish-preview.ps1 -InstallRoot D:\TheSeed -Bundle dist\preview\SEED -Commit (git rev-parse HEAD) -DailyWorkspace <Prepared> -AdoptPreparedCopy
+# 後續更新從原捷徑取得已選定的工作區
 .\publish-preview.ps1 -InstallRoot D:\TheSeed -Bundle dist\preview\SEED -Commit (git rev-parse HEAD)
 ~~~
 
-交付指令先在獨立目錄檢查候選啟動，再備份原工作區、更新根目錄 `SEED.lnk`，並從捷徑啟動核對。候選版使用新建的隔離工作區。從「設定與備份 → 關於 THESEED」查看建置版本、Commit 和資料路徑。要復原日常入口，用 `publish-preview.ps1 -InstallRoot D:\TheSeed -RestoreShortcut <候選目錄>\rollback\SEED-Previous.lnk`，會以原捷徑的工作區開啟上一版。
+發布時先驗證封裝與隔離啟動，再備份、更新 `SEED.lnk` 並核對執行中的版本和持續使用工作區。在「設定與備份 → 關於 THESEED」可查看 Commit 與實際資料路徑。用 `publish-preview.ps1 -InstallRoot D:\TheSeed -RestoreShortcut <候選目錄>\rollback\SEED-Previous.lnk` 可復原上一個日常入口。按捷徑原有設定開啟，兩個入口若使用不同工作區，各自保留新增資料。
+
+本機回復點保存在目前 Windows 帳號專用的 `%LOCALAPPDATA%\THESEED\workspace-recovery`。SQLite、有效 WAL、附件、憑證 namespace 和參照均保留。金鑰本身留在原 Windows 憑證庫，設定檔輪替或解除金鑰時保留舊憑證供回退。一般介面匯出的可攜 ZIP 仍會去除憑證參照。
 
 探索中隨包的英中翻譯在本機執行。它依作者簡介、已取得的 README 摘錄翻譯並快取；缺少來源時顯示原文或未知。選用連線模型整理資料前會先確認傳送與可能費用。
 

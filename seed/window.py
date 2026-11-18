@@ -2536,7 +2536,7 @@ class MainWindow(QMainWindow):
         self.experience_active = not self.experience_paused
         self.experience_timer = QTimer(self, singleShot=True)
         self.experience_timer.timeout.connect(self.index_experience)
-        self.providers = ProviderService(store)
+        self.providers = ProviderService(store, retain_previous_credentials=self.build.isolated or self.build.continuous)
         self.router = ModelRouter(self.providers)
         self.provider_tests = {}
         with self.store.connection() as db:
