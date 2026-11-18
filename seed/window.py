@@ -53,7 +53,7 @@ PAGES = [
     ("技能系統", "未來計畫"), ("人格與記憶", "狀態與成長紀錄"),
     ("人格與記憶", "經歷時間線"),
     ("人格與記憶", "成長證據"), ("技能系統", "探索與學習"), ("系統管理", "模型與金鑰"),
-    ("系統管理", "API 用量與費用"), ("系統管理", "外觀設定"),
+    ("系統管理", "API 用量與費用"), ("系統管理", "外觀設定"), ("技能系統", "本機知識庫"),
 ]
 MODEL_PAGE = 17
 RESOURCE_PAGE = 18
@@ -61,6 +61,7 @@ SETTINGS_PAGE = 9
 SKILL_PAGE = 4
 SKILL_ROUTES = (SKILL_PAGE, 3, 5)
 APPEARANCE_PAGE = 19
+KNOWLEDGE_PAGE = 20
 ITEM_ID = Qt.ItemDataRole.UserRole
 
 
@@ -2633,7 +2634,7 @@ class MainWindow(QMainWindow):
         self.groups = []
         self.dividers = []
         self.navigation_entries = PAGES
-        visual_order = [1, 0, 10, 16, 2, SKILL_PAGE, 12, 6, 15, 7, 14, 11, 13, 17, 18, 8, APPEARANCE_PAGE, 9]
+        visual_order = [1, 0, 10, 16, KNOWLEDGE_PAGE, 2, SKILL_PAGE, 12, 6, 15, 7, 14, 11, 13, 17, 18, 8, APPEARANCE_PAGE, 9]
         for index, (_, title) in enumerate(self.navigation_entries):
             callback = lambda _checked, page=index: self.navigate(page)
             button = action(title, callback)
@@ -2684,6 +2685,7 @@ class MainWindow(QMainWindow):
         from seed.experience_ui import ExperiencePage
         from seed.growth_ui import GrowthPage
         from seed.discovery_ui import DiscoveryPage
+        from seed.knowledge_ui import KnowledgePage
         from seed.panels import AppearancePage, ModelSettings
         from seed.resource_ui import ResourcePage
 
@@ -2698,7 +2700,7 @@ class MainWindow(QMainWindow):
             Governance(self),
             Settings(self), JobPage(self), ReviewPage(self), RoadmapPage(self), StatePage(self),
             ExperiencePage(self), GrowthPage(self), DiscoveryPage(self), ModelSettings(self), ResourcePage(self),
-            AppearancePage(self),
+            AppearancePage(self), KnowledgePage(self),
         ]
         self.skill_center = QTabWidget(documentMode=True)
         self.skill_center.setAccessibleName("技能中心")
@@ -2912,7 +2914,7 @@ class MainWindow(QMainWindow):
         menu.addAction("搜尋功能", self.search_workspace)
         menu.addAction("語音與畫面", self.pages[1].perception)
         menu.addSeparator()
-        for index in (16, SKILL_PAGE, 6, 15, 7, 14, 12, 2, 10, 11, 13, 8, 9, 0):
+        for index in (16, KNOWLEDGE_PAGE, SKILL_PAGE, 6, 15, 7, 14, 12, 2, 10, 11, 13, 8, 9, 0):
             menu.addAction(PAGES[index][1], lambda checked=False, route=index: self.navigate(route))
         menu.addSeparator()
         menu.addAction("模型與金鑰", self.open_providers)

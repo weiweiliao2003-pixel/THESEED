@@ -19,9 +19,9 @@ from seed.catalog_translation import TranslateCatalog, cache_key, evidence_field
 from seed.exploration import (SOURCES, catalog_projects, catalog_url, confirmed_open_source, explain, license_status,
                               public_link, repo_project, summary)
 from seed.input_fields import FocusHintEdit
-from seed.learning import SOURCE_EVIDENCE, install_candidate, propose_knowledge, propose_skill, register_source_research, test_candidate
+from seed.learning import SOURCE_EVIDENCE, install_candidate, propose_skill, register_source_research, test_candidate
 from seed.skills import OPERATIONS, steps_for
-from seed.window import ITEM_ID, action, label, replace_items, toolbar
+from seed.window import ITEM_ID, KNOWLEDGE_PAGE, action, label, replace_items, toolbar
 from seed.workbench import ListPage
 
 
@@ -92,7 +92,7 @@ class DiscoveryPage(ListPage):
         for title, callback in (("讀取 GitHub 專案", self.read_repo), ("追蹤設定", self.watches),
                 ("讀取公開網頁", self.read_document), ("匯入本機文件", self.read_file),
                 ("讀取專案檔案", self.read_repo_file), ("查看舊榜單專案", self.rank_project),
-                ("查看來源", self.show_source), ("送交知識審核", self.knowledge), ("技能候選", self.skills),
+                ("查看來源", self.show_source), ("建立知識候選", self.knowledge), ("技能候選", self.skills),
                 ("取消讀取", self.cancel)):
             menu.addAction(title, callback)
         more.setMenu(menu)
@@ -722,12 +722,12 @@ class DiscoveryPage(ListPage):
         self.perform(generate)
 
     def knowledge(self):
-        row = self.current_snapshot()
-        if row:
-            text, ok = QInputDialog.getMultiLineText(self, "知識候選", "請整理一條可驗證的知識", row["brief"])
-            if ok:
-                self.perform(lambda: propose_knowledge(self.store, row["id"], row["title"], text, self.window.pages[1].selected()))
-                self.window.navigate(11)
+        def open_knowledge():
+            row = self.current_snapshot()
+            if row:
+                self.window.navigate(KNOWLEDGE_PAGE)
+                self.window.pages[KNOWLEDGE_PAGE].offer_quote(row)
+        self.perform(open_knowledge)
 
     def skills(self):
         row = self.current_snapshot()
