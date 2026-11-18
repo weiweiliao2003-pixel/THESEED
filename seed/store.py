@@ -337,13 +337,17 @@ COMMIT;
 
 
 class Store:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, require_current=False):
         self.root = root.resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.require_current = require_current
+        if not require_current:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "seed.sqlite3"
         new_database = not self.path.exists()
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
+            if require_current and version != SCHEMA_VERSION:
+                raise ValueError("持續使用工作區的資料庫版本已變更。")
             if version == 0:
                 db.executescript(SCHEMA)
                 version = 1
@@ -404,7 +408,8 @@ class Store:
 
     @contextmanager
     def connection(self):
-        db = sqlite3.connect(self.path.as_uri(), timeout=5, uri=True)
+        location = self.path.as_uri()
+        db = sqlite3.connect(location + ("?mode=rw" if self.require_current else ""), timeout=5, uri=True)
         db.row_factory = sqlite3.Row
         try:
             db.execute("PRAGMA foreign_keys = ON")

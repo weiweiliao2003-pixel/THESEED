@@ -130,8 +130,9 @@ def validate_profile(values):
 
 
 class ProviderService:
-    def __init__(self, store):
+    def __init__(self, store, *, retain_previous_credentials=False):
         self.store = store
+        self.retain_previous_credentials = retain_previous_credentials
         namespace = store.preference("vault_namespace")
         if not namespace:
             namespace = uuid.uuid4().hex
@@ -305,7 +306,8 @@ class ProviderService:
         return profile_id
 
     def discard_old_ref(self, ref):
-        if self.store.read("SELECT 1 FROM providers WHERE secret_ref=? LIMIT 1", ref):
+        # A protected restore point or detached workspace can still reference this item.
+        if self.retain_previous_credentials or self.store.read("SELECT 1 FROM providers WHERE secret_ref=? LIMIT 1", ref):
             return
         try:
             self.vault.delete(ref)

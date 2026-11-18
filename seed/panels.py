@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QColorDialog, QComboBox, Q
                                QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from seed.backup import backup_workspace, open_backup, restore_into
+from seed.build_info import PREVIEW_MARKER
 from seed.context_budget import for_metadata
 from seed.input_fields import FocusHintEdit
 from seed.model_catalog import PURPOSE_LABELS, use_cases
@@ -548,7 +549,7 @@ class ProvidersDialog(QDialog):
         fields.addRow("預設對話模型", self.default_status)
         row.addLayout(fields, 3)
         layout.addLayout(row)
-        layout.addWidget(label("金鑰保存在 Windows 憑證庫。本機移除後，遠端撤銷請到供應商管理頁操作。"))
+        layout.addWidget(label("金鑰保存在 Windows 憑證庫。備份仍可能參照舊項目；遠端撤銷請至供應商管理頁操作。"))
         toolbar(layout, action("儲存設定檔", self.save, primary=True), action("測試連線", self.test),
                 action("取消測試", self.cancel_test))
         toolbar(layout, action("設為對話偏好", self.set_default), action("刪除設定檔", lambda: self.remove(False)),
@@ -631,7 +632,12 @@ class ProvidersDialog(QDialog):
 
     def remove(self, key_only):
         row = self.service.profile(self.current)
-        if not row or self.request or not self.window.confirm("移除", "移除本機金鑰？" if key_only else "刪除此設定檔及其本機金鑰？"):
+        if self.service.retain_previous_credentials:
+            message = ("解除此工作區的金鑰連結？Windows 憑證項目會保留供回退。" if key_only
+                       else "刪除此工作區的設定檔？Windows 憑證項目會保留供回退。")
+        else:
+            message = "移除本機金鑰？" if key_only else "刪除此設定檔及其本機金鑰？"
+        if not row or self.request or not self.window.confirm("移除", message):
             return
         try:
             (self.service.remove_secret if key_only else self.service.delete)(row)
@@ -719,6 +725,7 @@ def restore_backup(window):
             if folder:
                 destination = Path(folder) / "SEED-還原工作區"
                 restore_into(database, destination)
-                window.info("還原完成", f"工作區位於 {destination}\n以 --data-root 指定此資料夾即可開啟。")
+                (destination / PREVIEW_MARKER).write_text("theseed-preview/1", encoding="ascii")
+                window.info("還原完成", f"工作區位於 {destination}\n使用 --isolated-workspace --data-root 指定此資料夾即可開啟。")
     except (ValueError, OSError, zipfile.BadZipFile) as exc:
         window.show_error(str(exc))
