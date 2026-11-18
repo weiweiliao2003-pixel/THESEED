@@ -12,6 +12,7 @@ from collections import Counter
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from seed.attachments import asset_file, read_manifest
 from seed.backup import tables_for
@@ -124,14 +125,18 @@ def snapshot_workspace(source, target):
     """Copy stable database/WAL and every durable file to a new private directory."""
     if not source.is_absolute() or not target.is_absolute():
         raise ValueError("工作區與回復點必須是絕對路徑。")
+    if source != source.resolve() or target.parent != target.parent.resolve():
+        raise ValueError("工作區或回復點路徑包含重新解析點。")
     if source.resolve() == target.resolve() or source.resolve() in target.resolve().parents or target.exists():
         raise ValueError("回復點必須是工作區以外的全新位置。")
     initial = inventory(source)
     if DATABASE not in initial:
         raise ValueError("回復點來源缺少資料庫。")
-    with TemporaryDirectory(dir=target.parent, prefix=".copy-") as temporary:
-        captured = Path(temporary) / "Data"
-        captured.mkdir()
+    # The staged directory must inherit the recovery directory's ACL. Python's
+    # TemporaryDirectory uses a separate mode-0700 ACL on Windows.
+    captured = target.parent / (".capture-" + uuid4().hex)
+    captured.mkdir()
+    try:
         for name in initial:
             destination = captured / name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -139,12 +144,16 @@ def snapshot_workspace(source, target):
         if initial != inventory(captured) or initial != inventory(source):
             raise ValueError("工作區在備份期間變更。請先正常關閉 SEED 再重試。")
         # Validate a separate copy: opening WAL must not change the captured bytes.
-        checked = Path(temporary) / "verify"
-        shutil.copytree(captured, checked)
-        with closing(open_readonly(checked, staged=True)) as db:
-            version = sqlite_contents(db, checked)
-            credentials = credential_counts(db)
+        with TemporaryDirectory(dir=target.parent, prefix=".verify-") as temporary:
+            checked = Path(temporary) / "verify"
+            shutil.copytree(captured, checked)
+            with closing(open_readonly(checked, staged=True)) as db:
+                version = sqlite_contents(db, checked)
+                credentials = credential_counts(db)
         captured.rename(target)
+    finally:
+        if captured.exists() and captured.resolve().parent == target.parent and is_plain(captured):
+            shutil.rmtree(captured)
     return {"schema": version, "files": len(initial), "credentials": credentials}
 
 
