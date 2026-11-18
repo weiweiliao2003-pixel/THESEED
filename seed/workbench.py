@@ -130,6 +130,9 @@ class RegistryPage(ListPage):
         lines = ["分類：" + (category[0][0] if category else "未分類"),
                  "步驟：" + " → ".join(OPERATIONS[step] for step in steps_for(row["steps"])),
                  "權限：處理輸入文字，無網路、檔案或金鑰權限。"]
+        linked = self.store.read("SELECT id,snapshot_id FROM learning_candidates WHERE skill_id=?", row["id"])
+        if linked:
+            lines.append(f"來源快照 #{linked[0]['snapshot_id']} · 樣本驗證候選 #{linked[0]['id']}")
         lines.extend(f"{RELATIONS[edge['kind']]} · {edge['name']}" for edge in edges)
         self.details.setPlainText("\n".join(lines))
 
@@ -216,7 +219,9 @@ class RegistryPage(ListPage):
             self.window.notice("仍有技能依賴這個項目。")
             return
         if row and self.window.confirm("移除技能", f"移除 {row['name']}？"):
-            self.store.write("DELETE FROM skills WHERE id=?", row["id"])
+            with self.store.connection() as db:
+                db.execute("UPDATE learning_candidates SET status='uninstalled', skill_id=NULL WHERE skill_id=?", (row["id"],))
+                db.execute("DELETE FROM skills WHERE id=?", (row["id"],))
             self.refresh()
             self.window.refresh_status()
 

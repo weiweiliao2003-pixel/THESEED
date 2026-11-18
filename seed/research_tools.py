@@ -21,6 +21,50 @@ OUTPUT_LIMIT = 2 * 1024 * 1024
 OPERATION = "inspect-pe-imports"
 
 
+def probe_environment(command, cancel=lambda: False):
+    with TemporaryDirectory(prefix="theseed-rea-doctor-") as folder:
+        temp = Path(folder)
+        code, version = run_cli(command, temp, ["--version"], cancel)
+        if code or version.strip() != REA_VERSION:
+            raise ValueError("無法核對 REA 執行版本。")
+        node_code, node_version = run_cli((command[0],), temp, ["--version"], cancel)
+        _, raw = run_cli(command, temp, ["doctor", "--json"], cancel)
+        doctor = json.loads(raw)
+    base = {check["name"]: check["ok"] for check in doctor.get("scope_checks", [])}
+    metadata = json.loads((command[1].parents[1] / "package.json").read_bytes())
+    windows = sys.platform == "win32"
+    pe = "UNSUPPORTED_PLATFORM"
+    evidence = None
+    reason = "本接頭使用 Windows PE 樣本。"
+    if windows:
+        try:
+            sample = Path(sys.executable)
+            with sample.open("rb") as executable:
+                digest = hashlib.file_digest(executable, "sha256").hexdigest()
+            evidence = pe_inventory(command, sample, digest, cancel)
+            pe = "AVAILABLE" if base.get("node") and base.get("host") else "UNQUALIFIED"
+            reason = "Windows PE 靜態樣本指紋已核對。"
+        except (ValueError, TimeoutError) as error:
+            pe = "NOT_AVAILABLE"
+            reason = str(error)
+    container = [name for name in ("docker", "podman") if shutil.which(name)]
+    capabilities = [
+        {"name": OPERATION, "status": pe, "reason": reason},
+        {"name": "Ghidra", "status": "UNQUALIFIED" if base.get("ghidra") else "EXTERNAL_TOOL_MISSING",
+         "reason": "此宿主 doctor 偵測結果；應用程式未接線。"},
+        {"name": "Docker / Podman 隔離", "status": "UNQUALIFIED" if container else "EXTERNAL_TOOL_MISSING",
+         "reason": "、".join(container) if container else "PATH 未偵測到工具。"},
+        {"name": "REA 其他 Windows 分析", "status": "UNQUALIFIED", "reason": "未通過此用法的實機資格確認。"},
+    ]
+    return {"ready": pe == "AVAILABLE", "doctor_healthy": bool(doctor.get("healthy")), "version": version.strip(),
+            "package_commit": metadata.get("gitHead"), "node_version": node_version.strip() if node_code == 0 else None,
+            "platform": f"Windows {sys.getwindowsversion().build}" if windows else sys.platform,
+            "doctor_checks": {key: "AVAILABLE" if value else "NOT_AVAILABLE" for key, value in base.items()},
+            "capabilities": capabilities, "sample_evidence": evidence["evidence_id"] if evidence else None,
+            "operation": OPERATION, "node": str(command[0]), "entry": str(command[1]),
+            "socket_tools_detected": container, "source": SOURCE}
+
+
 def tool_paths(node, script):
     executable = Path(node).resolve(strict=True)
     entry = Path(script).resolve(strict=True)
@@ -120,23 +164,7 @@ class ResearchWorker(QThread):
             if self.target:
                 result = pe_inventory(command, self.target, self.digest, self.isInterruptionRequested)
             else:
-                with TemporaryDirectory(prefix="theseed-rea-doctor-") as folder:
-                    temp = Path(folder)
-                    code, version = run_cli(command, temp, ["--version"], self.isInterruptionRequested)
-                    if code or version.strip() != REA_VERSION:
-                        raise ValueError("無法核對 REA 執行版本。")
-                    _, raw = run_cli(command, temp, ["doctor", "--json"], self.isInterruptionRequested)
-                    doctor = json.loads(raw)
-                    base = {check["name"]: check["ok"] for check in doctor.get("scope_checks", [])}
-                    sample = Path(sys.executable)
-                    with sample.open("rb") as executable:
-                        digest = hashlib.file_digest(executable, "sha256").hexdigest()
-                    evidence = pe_inventory(command, sample, digest, self.isInterruptionRequested)
-                    result = {"ready": bool(base.get("node") and base.get("host") and evidence["evidence_id"]),
-                              "doctor_healthy": bool(doctor.get("healthy")), "version": version.strip(),
-                              "operation": OPERATION, "node": str(command[0]), "entry": str(command[1]),
-                              "socket_tools_detected": [name for name in ("docker", "podman") if shutil.which(name)],
-                              "source": SOURCE}
+                result = probe_environment(command, self.isInterruptionRequested)
             self.result.emit(result)
         except (OSError, ValueError, TypeError, AttributeError, TimeoutError) as exc:
             self.problem.emit(str(exc))

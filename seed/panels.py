@@ -34,8 +34,11 @@ def choices(values):
 
 
 class SkinDialog(QDialog):
-    def __init__(self, window):
+    def __init__(self, window, *, embedded=False):
         super().__init__(window)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.WindowType.Widget)
         self.window = window
         self.original = window.skin
         self.colors = {}
@@ -44,7 +47,7 @@ class SkinDialog(QDialog):
         self.resize(min(790, available.width() - 40), min(580, available.height() - 65))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
-        split = QHBoxLayout()
+        self.split = split = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         editor, controls = card()
         controls.addWidget(label("外觀主題", "sectionTitle"))
         form = QFormLayout()
@@ -81,7 +84,9 @@ class SkinDialog(QDialog):
         editor_scroll = QScrollArea(widgetResizable=True)
         editor_scroll.setWidget(editor)
         editor_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        editor_scroll.setMinimumWidth(290)
+        editor_scroll.setMinimumWidth(270 if embedded else 290)
+        if embedded:
+            editor_scroll.setMinimumHeight(360)
         split.addWidget(editor_scroll, 2)
         preview, sample = card()
         self.preview_title = label("", "sectionTitle")
@@ -108,6 +113,8 @@ class SkinDialog(QDialog):
                       field.valueChanged if isinstance(field, QSpinBox) else field.toggled)
             signal.connect(lambda *_: self.preview_timer.start())
         self.load(self.original)
+        if embedded:
+            self.preview_timer.stop()
 
     def load(self, values):
         self.colors = dict(values["colors"])
@@ -158,16 +165,32 @@ class SkinDialog(QDialog):
     def save(self):
         try:
             self.preview_timer.stop()
-            self.window.store.set_preference("skin", self.values())
-            self.window.set_skin(self.values())
-            self.accept()
+            values = self.values()
+            self.window.store.set_preference("skin", values)
+            self.window.set_skin(values)
+            if self.embedded:
+                self.original = values
+                self.window.notice("外觀已儲存。")
+            else:
+                self.accept()
         except sqlite3.Error as exc:
             self.window.show_error(str(exc))
 
     def reject(self):
         self.preview_timer.stop()
-        self.window.set_skin(self.original)
-        super().reject()
+        if self.embedded:
+            self.load(self.original)
+            self.preview_timer.stop()
+            self.preview()
+        else:
+            self.window.set_skin(self.original)
+            super().reject()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.embedded:
+            self.split.setDirection(QBoxLayout.Direction.TopToBottom if self.width() < 635
+                                    else QBoxLayout.Direction.LeftToRight)
 
     def import_file(self):
         source, _ = QFileDialog.getOpenFileName(self, "預覽主題", "", "主題 (*.json)")
@@ -185,6 +208,20 @@ class SkinDialog(QDialog):
             data = json.dumps(theme_document(self.values()), ensure_ascii=False, indent=2).encode()
             if not file.open(QIODevice.OpenModeFlag.WriteOnly) or file.write(data) != len(data) or not file.commit():
                 self.window.show_error("無法匯出主題。")
+
+
+class AppearancePage(Page):
+    def __init__(self, window):
+        super().__init__(window, "外觀設定", "預覽、調整並儲存配色與字體。")
+        self.editor = SkinDialog(window, embedded=True)
+        self.layout.addWidget(self.editor)
+
+    def refresh(self):
+        self.editor.original = self.window.skin
+        self.editor.load(self.editor.original)
+
+    def leave(self):
+        self.editor.reject()
 
 
 class ServiceWizard(QDialog):

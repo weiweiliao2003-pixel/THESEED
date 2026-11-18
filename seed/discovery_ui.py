@@ -19,7 +19,7 @@ from seed.catalog_translation import TranslateCatalog, cache_key, evidence_field
 from seed.exploration import (SOURCES, catalog_projects, catalog_url, confirmed_open_source, explain, license_status,
                               public_link, repo_project, summary)
 from seed.input_fields import FocusHintEdit
-from seed.learning import install_candidate, propose_knowledge, propose_skill, test_candidate
+from seed.learning import SOURCE_EVIDENCE, install_candidate, propose_knowledge, propose_skill, register_source_research, test_candidate
 from seed.skills import OPERATIONS, steps_for
 from seed.window import ITEM_ID, action, label, replace_items, toolbar
 from seed.workbench import ListPage
@@ -97,6 +97,7 @@ class DiscoveryPage(ListPage):
             menu.addAction(title, callback)
         more.setMenu(menu)
         toolbar(self.panel, action("查看專案", lambda: self.perform(self.inspect_project)),
+                action("研究此項", lambda: self.perform(self.research_selected)),
                 action("收藏／取消", self.favorite), action("繁中整理", self.translate_selected), more)
         self.timer = QTimer(self, interval=90_000)
         self.timer.timeout.connect(self.watch_tick)
@@ -125,9 +126,13 @@ class DiscoveryPage(ListPage):
             "EXISTS(SELECT 1 FROM discovery_watches w WHERE source='https://github.com/'||w.repo)"
             + (f" OR id IN ({','.join('?' for _ in saved)})" if saved else ""),
             "1",
-            "EXISTS(SELECT 1 FROM learning_candidates l WHERE l.snapshot_id=source_snapshots.id)",
+            """EXISTS(SELECT 1 FROM learning_candidates l WHERE l.snapshot_id=source_snapshots.id)
+               OR EXISTS(SELECT 1 FROM research_evidence e WHERE json_valid(e.document)
+                 AND json_extract(e.document,'$.evidence_schema')=?
+                 AND json_extract(e.document,'$.snapshot_id')=source_snapshots.id)""",
         )[selection]
-        self.populate(self.store.read(f"SELECT * FROM source_snapshots WHERE {where} ORDER BY id DESC LIMIT 300", *(saved if selection == 1 else ())),
+        params = saved if selection == 1 else (SOURCE_EVIDENCE,) if selection == 3 else ()
+        self.populate(self.store.read(f"SELECT * FROM source_snapshots WHERE {where} ORDER BY id DESC LIMIT 300", *params),
                       lambda row: f"{'★ ' if row['id'] in favorites else ''}{row['title']}\n{row['created_at']} UTC · {row['revision'][:9]}")
 
     def show_details(self):
@@ -438,7 +443,21 @@ class DiscoveryPage(ListPage):
         meta["has_overview"] = bool(item.get("overview"))
         return snapshot(self.store, item["url"], item.get("overview") or item["description"] or summary(item)[0], item["name"],
                         {"project_brief": 1, "metadata": meta,
+                         "evidence_kind": "readme" if item.get("overview") else "description" if item["description"] else "insufficient",
                          "readme": item.get("readme"), "license_url": item.get("license_url")})
+
+    def research_selected(self):
+        row = self.current_snapshot()
+        if row:
+            record = register_source_research(self.store, row["id"])
+            self.window.navigate(2)
+            self.window.research.select_record(record)
+            self.window.notice("已登錄公開來源及授權證據。")
+
+    def open_research_source(self, source_id):
+        self.tabs.setCurrentIndex(3)
+        self.window.navigate(16)
+        self.select_id(source_id)
 
     def translate_selected(self):
         def open_editor():
@@ -728,15 +747,16 @@ class CandidateDialog(QDialog):
         layout.addWidget(self.list)
         self.results = QPlainTextEdit(readOnly=True)
         layout.addWidget(self.results)
+        self.blueprint_button = action("開啟藍圖", self.open_blueprint)
         toolbar(layout, action("新建文字技能", self.new), action("驗證樣本", self.test), action("安裝至技能中心", self.install, primary=True),
-                action("關閉", self.accept))
+                self.blueprint_button, action("關閉", self.accept))
         self.refresh()
 
     def refresh(self, chosen=None):
         rows = self.page.store.read("SELECT * FROM learning_candidates WHERE snapshot_id=? ORDER BY id DESC", self.source["id"])
         self.rows = {row["id"]:row for row in rows}
-        statuses={"draft":"待驗證","tested":"樣本通過","installed":"已安裝"}
-        replace_items(self.list, ((row['id'],f"{row['name']} · {statuses[row['status']]}") for row in rows), chosen or next(iter(self.rows),None))
+        statuses={"draft":"待驗證","tested":"樣本通過","installed":"已安裝","uninstalled":"已卸載"}
+        replace_items(self.list, ((row['id'],f"{row['name']} · {statuses.get(row['status'],row['status'])}") for row in rows), chosen or next(iter(self.rows),None))
         self.details()
 
     def selected(self):
@@ -745,8 +765,18 @@ class CandidateDialog(QDialog):
 
     def details(self):
         row=self.selected()
+        self.blueprint_button.setEnabled(bool(row and json.loads(row["evidence"] or "{}").get("provenance")))
         self.results.setPlainText(f"來源 #{self.source['id']}：{self.source['source']}\n" +
                                   ((" → ".join(OPERATIONS[step] for step in steps_for(row['steps']))+"\n"+row['evidence']) if row else "尚無候選"))
+
+    def open_blueprint(self):
+        row = self.selected()
+        trace = json.loads(row["evidence"] or "{}").get("provenance") if row else None
+        editor = self.page.window.pages[3]
+        if trace and editor.confirm_discard():
+            self.accept()
+            self.page.window.navigate(3)
+            editor.perform(lambda: editor.load(trace["blueprint_id"]))
 
     def new(self):
         name,ok=QInputDialog.getText(self,"候選技能","技能名稱")
