@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QLayout,
-    QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+    QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem,
     QSizePolicy, QTextBrowser, QVBoxLayout, QWidget,
 )
 
@@ -53,11 +53,14 @@ PAGES = [
     ("技能系統", "未來計畫"), ("人格與記憶", "狀態與成長紀錄"),
     ("人格與記憶", "經歷時間線"),
     ("人格與記憶", "成長證據"), ("技能系統", "探索與學習"), ("系統管理", "模型與金鑰"),
-    ("系統管理", "API 用量與費用"),
+    ("系統管理", "API 用量與費用"), ("系統管理", "外觀設定"),
 ]
 MODEL_PAGE = 17
 RESOURCE_PAGE = 18
 SETTINGS_PAGE = 9
+SKILL_PAGE = 4
+SKILL_ROUTES = (SKILL_PAGE, 3, 5)
+APPEARANCE_PAGE = 19
 ITEM_ID = Qt.ItemDataRole.UserRole
 
 
@@ -1538,7 +1541,7 @@ class FileFingerprint(QThread):
 
 class Research(Page):
     def __init__(self, window):
-        super().__init__(window, "REA 研究室", "在授權範圍內唯讀檢查 Windows PE 匯入表，並保存可追溯的證據。")
+        super().__init__(window, "REA 研究室", "核對公開來源證據，或在授權範圍內唯讀檢查 Windows PE 匯入表。")
         self.worker = None
         self.job = None
         self.file_to_register = None
@@ -1552,9 +1555,12 @@ class Research(Page):
         self.check_tool = action("環境檢查", self.probe)
         self.analyze = action("分析匯入表", self.analyze_selected, primary=True)
         self.cancel_tool = action("取消作業", self.cancel_analysis)
+        self.research_source = action("開啟來源與技能候選", self.open_research_source)
+        self.research_source.setEnabled(False)
+        self.snapshot_id = None
         self.cancel_tool.setEnabled(False)
         toolbar(layout, self.add, self.configure, self.check_tool)
-        toolbar(layout, self.analyze, self.cancel_tool)
+        toolbar(layout, self.analyze, self.cancel_tool, self.research_source)
         self.layout.addWidget(panel)
         self.records = QTableWidget(0, 4)
         self.records.setAccessibleName("研究登錄紀錄")
@@ -1609,9 +1615,19 @@ class Research(Page):
         rows = self.records.selectionModel().selectedRows()
         return self.records.item(rows[0].row(), 0).data(ITEM_ID) if rows else None
 
+    def select_record(self, record):
+        for index in range(self.records.rowCount()):
+            if self.records.item(index, 0).data(ITEM_ID) == record:
+                self.records.selectRow(index)
+                return
+
+    def open_research_source(self):
+        if self.snapshot_id is not None:
+            self.window.pages[16].open_research_source(self.snapshot_id)
+
     def analyze_selected(self):
         key = self.selected_record()
-        if self.worker or not key or not self.readiness or not self.readiness["ready"]:
+        if self.worker or not key or self.snapshot_id is not None or not self.readiness or not self.readiness["ready"]:
             return
         record = self.store.read("SELECT * FROM research WHERE id=?", key)[0]
         path = self.store.preference(f"research_path:{key}")
@@ -1651,11 +1667,11 @@ class Research(Page):
     def save_rea_result(self, research, target, result):
         if research is None:
             self.readiness = result
-            status = "PE 匯入表可用" if result["ready"] else "doctor 未通過，請核對接頭"
-            detected = "、".join(result["socket_tools_detected"])
-            isolated = f"已偵測 {detected}，隔離尚未驗證" if detected else "沒有 Docker／Podman 接頭"
-            full = "" if result["doctor_healthy"] else " · 完整 doctor 仍有缺項"
-            self.tools.setText(f"REA {result['version']} · {status}{full}\n隔離實驗：{isolated}")
+            header = f"REA {result['version']} · Commit {result['package_commit'] or '套件未提供'}"
+            environment = f"Node {result['node_version'] or '未知'} · {result['platform']}"
+            checks = " · ".join(f"{name} {state}" for name, state in result["doctor_checks"].items())
+            matrix = [f"{item['name']} · {item['status']} · {item['reason']}" for item in result["capabilities"]]
+            self.tools.setText("\n".join((header, environment, *matrix, f"doctor · {checks}")))
             self.tools.setToolTip(result["entry"])
             return
         with self.store.connection() as db:
@@ -1758,7 +1774,9 @@ class Research(Page):
 
     def show_details(self):
         rows = self.records.selectionModel().selectedRows()
-        self.analyze.setEnabled(bool(rows and not self.worker and self.readiness and self.readiness["ready"]))
+        self.snapshot_id = None
+        self.analyze.setEnabled(False)
+        self.research_source.setEnabled(False)
         if not rows:
             self.evidence.clear()
             self.details.setText("選取一筆紀錄以查看完整指紋。" if self.records.rowCount() else "尚無研究紀錄。")
@@ -1768,6 +1786,10 @@ class Research(Page):
         evidence = self.store.read("SELECT document FROM research_evidence WHERE research_id=? ORDER BY id DESC LIMIT 1",
                                    self.records.item(index, 0).data(ITEM_ID))
         data = json.loads(evidence[0][0]) if evidence else None
+        if data and data.get("analyzer") == "saved-public-document":
+            self.snapshot_id = data.get("snapshot_id")
+        self.research_source.setEnabled(self.snapshot_id is not None)
+        self.analyze.setEnabled(bool(self.snapshot_id is None and not self.worker and self.readiness and self.readiness["ready"]))
         self.evidence.setPlainText(json.dumps(data, ensure_ascii=False, indent=2) if data else "尚無分析證據。")
 
     def refresh(self):
@@ -2610,10 +2632,10 @@ class MainWindow(QMainWindow):
         self.navigation = []
         self.groups = []
         self.dividers = []
-        self.navigation_entries = PAGES + [("系統管理", "外觀設定")]
-        visual_order = [1, 0, 10, 16, 2, 3, 4, 5, 12, 6, 15, 7, 14, 11, 13, 17, 18, 8, 19, 9]
+        self.navigation_entries = PAGES
+        visual_order = [1, 0, 10, 16, 2, SKILL_PAGE, 12, 6, 15, 7, 14, 11, 13, 17, 18, 8, APPEARANCE_PAGE, 9]
         for index, (_, title) in enumerate(self.navigation_entries):
-            callback = (lambda _checked, page=index: self.navigate(page)) if index < len(PAGES) else self.open_skin
+            callback = lambda _checked, page=index: self.navigate(page)
             button = action(title, callback)
             button.setObjectName("navButton")
             button.setAccessibleName(title)
@@ -2662,7 +2684,7 @@ class MainWindow(QMainWindow):
         from seed.experience_ui import ExperiencePage
         from seed.growth_ui import GrowthPage
         from seed.discovery_ui import DiscoveryPage
-        from seed.panels import ModelSettings
+        from seed.panels import AppearancePage, ModelSettings
         from seed.resource_ui import ResourcePage
 
         self.pages = [
@@ -2676,8 +2698,19 @@ class MainWindow(QMainWindow):
             Governance(self),
             Settings(self), JobPage(self), ReviewPage(self), RoadmapPage(self), StatePage(self),
             ExperiencePage(self), GrowthPage(self), DiscoveryPage(self), ModelSettings(self), ResourcePage(self),
+            AppearancePage(self),
         ]
-        for page in self.pages:
+        self.skill_center = QTabWidget(documentMode=True)
+        self.skill_center.setAccessibleName("技能中心")
+        for route, title in zip(SKILL_ROUTES, ("已安裝技能", "技能工坊／候選", "技能關係／依賴"), strict=True):
+            view = QScrollArea(widgetResizable=True)
+            view.setWidget(self.pages[route])
+            self.skill_center.addTab(view, title)
+        self.skill_center.currentChanged.connect(lambda tab: self.navigate(SKILL_ROUTES[tab]))
+        for index, page in enumerate(self.pages):
+            if index in SKILL_ROUTES:
+                self.stack.addWidget(self.skill_center if index == SKILL_PAGE else QWidget())
+                continue
             scroll = QScrollArea(widgetResizable=True)
             scroll.setWidget(page)
             self.stack.addWidget(scroll)
@@ -2774,11 +2807,20 @@ class MainWindow(QMainWindow):
         previous = self.stack.currentIndex()
         if previous == 1 and index != 1:
             self.pages[1].save_draft()
-        self.stack.setCurrentIndex(index)
+        if previous == APPEARANCE_PAGE:
+            if index == APPEARANCE_PAGE:
+                return
+            self.pages[APPEARANCE_PAGE].leave()
+        destination = SKILL_PAGE if index in SKILL_ROUTES else index
+        if destination == SKILL_PAGE:
+            signals = self.skill_center.blockSignals(True)
+            self.skill_center.setCurrentIndex(SKILL_ROUTES.index(index))
+            self.skill_center.blockSignals(signals)
+        self.stack.setCurrentIndex(destination)
         group, page = PAGES[index]
-        self.breadcrumb.setText(f"{group} / {page}")
+        self.breadcrumb.setText(f"{group} / {page}" if index not in (3, 5) else f"{group} / 技能中心 / {page}")
         for button_index, button in enumerate(self.navigation[:len(PAGES)]):
-            button.setChecked(index == button_index)
+            button.setChecked(destination == button_index)
         self.pages[index].perform(self.pages[index].refresh)
         if index != 1:
             self.pages[1].animation.stop()
@@ -2820,9 +2862,12 @@ class MainWindow(QMainWindow):
             heading.style().unpolish(heading)
             heading.style().polish(heading)
             heading.update()
-        rail = {1: "chat", 6: "person", 10: "clock", 5: "tree", 9: "settings"}
-        group_entry = {"工作空間": 1, "人格與記憶": 6, "技能系統": 5, "系統管理": 9}
+        rail = {1: "chat", 6: "person", 10: "clock", SKILL_PAGE: "tree", 9: "settings"}
+        group_entry = {"工作空間": 1, "人格與記憶": 6, "技能系統": SKILL_PAGE, "系統管理": 9}
         for index, button in enumerate(self.navigation):
+            if index in (3, 5):
+                button.hide()
+                continue
             title = self.navigation_entries[index][1]
             button.setText("" if narrow else title)
             position = index == (group_entry.get(group) if narrow else current)
@@ -2867,7 +2912,7 @@ class MainWindow(QMainWindow):
         menu.addAction("搜尋功能", self.search_workspace)
         menu.addAction("語音與畫面", self.pages[1].perception)
         menu.addSeparator()
-        for index in (16, 5, 6, 15, 7, 14, 12, 2, 3, 4, 10, 11, 13, 8, 9, 0):
+        for index in (16, SKILL_PAGE, 6, 15, 7, 14, 12, 2, 10, 11, 13, 8, 9, 0):
             menu.addAction(PAGES[index][1], lambda checked=False, route=index: self.navigate(route))
         menu.addSeparator()
         menu.addAction("模型與金鑰", self.open_providers)
@@ -2931,8 +2976,7 @@ class MainWindow(QMainWindow):
             self.pages[self.stack.currentIndex()].refresh()
 
     def open_skin(self):
-        from seed.panels import SkinDialog
-        SkinDialog(self).exec()
+        self.navigate(APPEARANCE_PAGE)
 
     def open_providers(self, profile_id=None):
         self.navigate(MODEL_PAGE)
@@ -3044,6 +3088,8 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         try:
+            if self.stack.currentIndex() == APPEARANCE_PAGE:
+                self.pages[APPEARANCE_PAGE].leave()
             settings.persist_changes()
             self.pages[1].save_draft()
             self.store.set_preference("window_size", [self.width(), self.height()])
