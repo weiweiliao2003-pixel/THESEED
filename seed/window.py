@@ -167,7 +167,7 @@ class Overview(Page):
         layout.addWidget(label("系統狀態", "sectionTitle"))
         self.health = label("", "muted")
         layout.addWidget(self.health)
-        layout.addWidget(label("人格 Core：未安裝。可直接使用本機對話、人格設定與記憶。", "muted"))
+        layout.addWidget(label("可直接使用本機對話、人格設定與記憶。", "muted"))
         layout.addWidget(label("工作佇列：目前沒有執行中的背景技能任務。", "muted"))
         self.layout.addWidget(panel)
         self.layout.addStretch()
@@ -2381,7 +2381,9 @@ class Settings(Page):
             layout.addWidget(commit)
         layout.addWidget(label(build.workspace_label, "muted"))
         if build.isolated:
-            layout.addWidget(label("這個試用工作區有自己的對話、人格、記憶與模型設定。試用變更保留在此，原工作區資料可從上一版入口開啟。", "muted"))
+            layout.addWidget(label("試用變更保留在這個隔離工作區。日常資料請從已確認的工作區入口開啟。", "muted"))
+        elif build.continuous:
+            layout.addWidget(label("更新程式時沿用此工作區，對話、人格、記憶與模型設定保存在此。", "muted"))
         data_root = label(str(self.store.root), "path")
         data_root.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(data_root)

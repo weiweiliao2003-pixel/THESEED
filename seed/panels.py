@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QColorDialog, QComboBox, Q
                                QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from seed.backup import backup_workspace, open_backup, restore_into
+from seed.build_info import PREVIEW_MARKER
 from seed.context_budget import for_metadata
 from seed.input_fields import FocusHintEdit
 from seed.model_catalog import PURPOSE_LABELS, use_cases
@@ -719,6 +720,7 @@ def restore_backup(window):
             if folder:
                 destination = Path(folder) / "SEED-還原工作區"
                 restore_into(database, destination)
-                window.info("還原完成", f"工作區位於 {destination}\n以 --data-root 指定此資料夾即可開啟。")
+                (destination / PREVIEW_MARKER).write_text("theseed-preview/1", encoding="ascii")
+                window.info("還原完成", f"工作區位於 {destination}\n使用 --isolated-workspace --data-root 指定此資料夾即可開啟。")
     except (ValueError, OSError, zipfile.BadZipFile) as exc:
         window.show_error(str(exc))

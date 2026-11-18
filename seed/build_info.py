@@ -21,6 +21,7 @@ class RuntimeInfo:
     commit: str = ""
     channel: str = "source"
     isolated: bool = False
+    continuous: bool = False
 
     @property
     def status(self):
@@ -28,7 +29,14 @@ class RuntimeInfo:
 
     @property
     def workspace_label(self):
-        return "隔離試用工作區" if self.isolated else "現用工作區"
+        return {"isolated": "隔離試用工作區", "continuous": "持續使用工作區",
+                "current": "現用工作區"}[self.mode]
+
+    @property
+    def mode(self):
+        if self.isolated:
+            return "isolated"
+        return "continuous" if self.continuous else "current"
 
     @property
     def title(self):
@@ -40,22 +48,22 @@ class RuntimeInfo:
         staging.write_text(json.dumps({
             "pid": os.getpid(), "executable": str(Path(sys.executable).resolve()),
             "version": self.version, "commit": self.commit, "channel": self.channel,
-            "workspace": str(root.resolve()), "mode": "isolated" if self.isolated else "current",
+            "workspace": str(root.resolve()), "mode": self.mode,
         }, ensure_ascii=False), encoding="utf-8")
         staging.replace(path)
 
 
-def runtime_info(isolated=False):
+def runtime_info(isolated=False, *, continuous=False):
     if not getattr(sys, "frozen", False):
-        return RuntimeInfo(isolated=isolated)
+        return RuntimeInfo(isolated=isolated, continuous=continuous)
     try:
         data = json.loads(Path(__file__).with_name("build-info.json").read_text(encoding="utf-8-sig"))
         if (data["version"] == VERSION and re.fullmatch(r"[0-9a-f]{40}", data["commit"])
                 and data["channel"] in {"candidate", "accepted"}):
-            return RuntimeInfo(data["version"], data["commit"], data["channel"], isolated)
+            return RuntimeInfo(data["version"], data["commit"], data["channel"], isolated, continuous)
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    return RuntimeInfo(channel="unverified", isolated=isolated)
+    return RuntimeInfo(channel="unverified", isolated=isolated, continuous=continuous)
 
 
 def verify_preview_workspace(root):
