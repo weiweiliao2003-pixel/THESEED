@@ -115,6 +115,11 @@ class RegistryPage(ListPage):
         toolbar(self.panel, action("建立文字技能", self.create, primary=True), action("執行", self.run_skill),
                 action("切換啟用", self.toggle), action("移除", self.remove))
         toolbar(self.panel, action("新增關係", self.relate), action("融合沙盤", self.fusions))
+        toolbar(self.panel, action("建立第一個技能／查看候選", self.production, primary=True))
+
+    def production(self):
+        from seed.window import SKILL_WORKFLOW_PAGE
+        self.window.navigate(SKILL_WORKFLOW_PAGE)
 
     def refresh(self):
         self.populate(self.store.read("SELECT * FROM skills ORDER BY name"),
@@ -123,7 +128,7 @@ class RegistryPage(ListPage):
     def show_details(self):
         row = self.selection()
         if row is None:
-            self.details.setPlainText("尚無技能。建立文字技能後可從這裡執行與管理。")
+            self.details.setPlainText("尚無已安裝技能。按「建立第一個技能／查看候選」，完成步驟與樣本後安裝，再回這裡執行。")
             return
         category = self.store.read("SELECT name FROM categories WHERE id=?", row["category_id"])
         edges = self.store.read("SELECT s.name, e.kind FROM skill_edges e JOIN skills s ON s.id=e.target WHERE e.source=?", row["id"])
@@ -137,38 +142,9 @@ class RegistryPage(ListPage):
         self.details.setPlainText("\n".join(lines))
 
     def create(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("建立文字技能")
-        layout = QVBoxLayout(dialog)
-        form = QFormLayout()
-        name = QLineEdit()
-        name.setMaxLength(100)
-        form.addRow("名稱", name)
-        categories = QComboBox()
-        categories.addItem("未分類", None)
-        for row in self.store.read("SELECT * FROM categories ORDER BY name"):
-            categories.addItem(row["name"], row["id"])
-        form.addRow("分類", categories)
-        fields = [QComboBox() for _ in range(3)]
-        for index, box in enumerate(fields):
-            box.addItem("略過", None)
-            for key, title in OPERATIONS.items():
-                box.addItem(title, key)
-            form.addRow(f"步驟 {index + 1}", box)
-        layout.addLayout(form)
-        toolbar(layout, action("建立", dialog.accept, primary=True), action("取消", dialog.reject))
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            def save():
-                if not name.text().strip():
-                    raise ValueError("請輸入技能名稱。")
-                steps = json.dumps([field.currentData() for field in fields if field.currentData()])
-                steps_for(steps)
-                item = self.store.write("INSERT INTO skills(name,category_id,steps) VALUES (?,?,?)", name.text().strip(),
-                                        categories.currentData(), steps)
-                self.refresh()
-                self.select_id(item)
-                self.window.refresh_status()
-            self.perform(save)
+        from seed.window import SKILL_WORKFLOW_PAGE
+        self.window.navigate(SKILL_WORKFLOW_PAGE)
+        self.window.pages[SKILL_WORKFLOW_PAGE].create()
 
     def run_skill(self):
         row = self.selection()

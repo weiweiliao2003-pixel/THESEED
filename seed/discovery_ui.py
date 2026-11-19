@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
                                QSplitter, QStackedWidget, QTabBar, QTextBrowser, QVBoxLayout, QWidget)
 
 from seed.discovery import (API, MAX_DOCUMENT, TREND_PERIODS, PublicRead, document_url, parse_document, repo_name,
-                            save_repository, snapshot)
+                            import_text_file, save_public_document, save_repository, snapshot)
 from seed.catalog_translation import TranslateCatalog, cache_key, evidence_fields, installed, needs_translation
 from seed.exploration import (SOURCES, catalog_projects, catalog_url, confirmed_open_source, explain, license_status,
                               public_link, repo_project, summary)
@@ -23,6 +23,7 @@ from seed.learning import SOURCE_EVIDENCE, install_candidate, propose_skill, reg
 from seed.skills import OPERATIONS, steps_for
 from seed.window import ITEM_ID, KNOWLEDGE_PAGE, action, label, replace_items, toolbar
 from seed.workbench import ListPage
+from seed.capability_tasks import TASKS, task_documents
 
 
 class DiscoveryPage(ListPage):
@@ -65,6 +66,15 @@ class DiscoveryPage(ListPage):
         self.controls = QWidget()
         control_layout = QVBoxLayout(self.controls)
         control_layout.setContentsMargins(0, 0, 0, 0)
+        self.scope = QComboBox()
+        self.scope.addItem("THESEED 能力任務", "tasks")
+        self.scope.addItem("原始全站排行榜", "catalog")
+        self.task = QComboBox()
+        for key, values in TASKS.items():
+            self.task.addItem(values[0], key)
+        toolbar(control_layout, self.scope, self.task)
+        self.scope.currentIndexChanged.connect(self.refresh_catalog)
+        self.task.currentIndexChanged.connect(self.refresh_catalog)
         self.source = QComboBox()
         for key, (title, _, _) in SOURCES.items():
             self.source.addItem(title, key)
@@ -115,7 +125,8 @@ class DiscoveryPage(ListPage):
         self.lists.setCurrentIndex(0 if selection == 0 else 1)
         if selection == 0:
             self.refresh_catalog()
-            if not self.started_catalog and not self.catalog and self.isVisible() and self.source.currentData() == "trending":
+            if (self.scope.currentData() == "catalog" and not self.started_catalog and not self.catalog
+                    and self.isVisible() and self.source.currentData() == "trending"):
                 self.started_catalog = True
                 QTimer.singleShot(0, lambda: self.perform(self.update_catalog) if self.tabs.currentIndex() == 0 and not self.job else None)
             return
@@ -177,6 +188,16 @@ class DiscoveryPage(ListPage):
         return rows[0] if rows else None
 
     def refresh_catalog(self):
+        task_mode = self.scope.currentData() == "tasks"
+        self.task.setVisible(task_mode)
+        self.source.setVisible(not task_mode)
+        self.period.setVisible(not task_mode and self.source.currentData() == "trending")
+        self.query.setVisible(not task_mode and self.source.currentData() != "trending")
+        if task_mode:
+            items = task_documents(self.task.currentData())
+            self.render_catalog(items, "", "")
+            self.status.setText("依具體工程缺口列出官方文件；相容性與吸收需另以來源及樣本核對。")
+            return
         source = self.source.currentData()
         try:
             url = catalog_url(source, self.query.text(), self.period.currentData())
@@ -187,6 +208,9 @@ class DiscoveryPage(ListPage):
         self.render_catalog(json.loads(saved["refs"])["projects"] if saved else [], url, saved["created_at"] if saved else "")
 
     def update_catalog(self):
+        if self.scope.currentData() == "tasks":
+            self.refresh_catalog()
+            return
         source = self.source.currentData()
         url = catalog_url(source, self.query.text(), self.period.currentData())
         saved = self.cached_catalog(url)
@@ -321,6 +345,16 @@ class DiscoveryPage(ListPage):
     def show_project(self, *_):
         title, order, source = SOURCES[self.source.currentData()]
         item = self.selected_project()
+        if item and item.get("task") in TASKS and "operations" in item:
+            goal, module, gap = TASKS[item["task"]]
+            self.details.setHtml(
+                f"<h2>{escape(item['name'])}</h2><p>{self.links((('官方來源',item['url']),('授權',item['license_url'])))}</p>"
+                f"<h3>THESEED 的具體需求</h3><p>{escape(goal)}<br>{escape(gap)}<br>{escape(module)}</p>"
+                f"<h3>來源與可研究的方法</h3><p>{escape(item['description'])}</p>"
+                f"<h3>平台、依賴與授權</h3><p>{escape(item['platform'])}<br>{escape(item['license'])}，依原頁條款核對。</p>"
+                "<h3>研究路徑</h3><p>按「研究此項」明確下載這一份官方文件，產出可核對的功能分析。"
+                "目前 REA PE 接頭用於另行授權的本機 PE；此來源使用文件分析器。</p>")
+            return
         source_links = self.links(((title + " 官方探索", source), ("原始擷取來源", self.catalog_url)))
         capture = f"{self.catalog_context} UTC" if self.catalog_context else "尚未擷取"
         heading = f"<p>{source_links} · {escape(order)} · 擷取 {escape(capture)}"
@@ -447,6 +481,30 @@ class DiscoveryPage(ListPage):
                          "readme": item.get("readme"), "license_url": item.get("license_url")})
 
     def research_selected(self):
+        item = self.selected_project() if self.tabs.currentIndex() == 0 else None
+        if item and item.get("task") in TASKS and "operations" in item:
+            if not self.window.confirm("研究官方文件", f"{item['name']}\n僅讀取這份公開文件並保存來源分析，不下載或執行外部程式？"):
+                return
+            from seed.source_library import SourceLoader
+            if getattr(self, "research_loader", None) and self.research_loader.request:
+                self.status.setText("正在讀取研究來源。")
+                return
+            loader = SourceLoader(self.store, self)
+            self.research_loader = loader
+            loader.problem.connect(self.status.setText)
+            def ready(key):
+                row = self.store.read("SELECT * FROM source_snapshots WHERE id=?", key)[0]
+                record = register_source_research(self.store, key)
+                self.window.navigate(2)
+                self.window.research.select_record(record)
+                self.status.setText("文件分析完成，可在研究室查看結果並繼續。")
+            loader.saved.connect(lambda key: self.perform(lambda: ready(key)))
+            self.status.setText("正在取得研究原文…")
+            if item["url"].startswith("https://github.com/"):
+                loader.github(repo_name(item["url"]), "")
+            else:
+                loader.web(item["url"])
+            return
         row = self.current_snapshot()
         if row:
             record = register_source_research(self.store, row["id"])
@@ -534,6 +592,8 @@ class DiscoveryPage(ListPage):
     def shutdown(self):
         self.timer.stop()
         self.cancel()
+        if getattr(self, "research_loader", None):
+            self.research_loader.cancel()
         if self.translation_worker:
             self.translation_worker.requestInterruption()
             self.translation_worker.wait()
@@ -648,10 +708,7 @@ class DiscoveryPage(ListPage):
                 if not ok:
                     self.finish(False, body)
                     return
-                if not kind.startswith(("text/", "application/json", "application/yaml", "application/xml")):
-                    self.finish(False, "來源不是支援的文字或 API 文件。")
-                    return
-                key = snapshot(self.store, destination, parse_document(body, "html" in kind), destination, {"url":destination})
+                key = save_public_document(self.store, destination, body, kind)
                 self.select_document(key)
                 self.finish(True, "已保存公開網頁的文字來源。")
             self.fetch(destination, receive)
@@ -662,10 +719,7 @@ class DiscoveryPage(ListPage):
         if not source:
             return
         def save():
-            path = Path(source)
-            with path.open("rb") as file:
-                text = parse_document(file.read(MAX_DOCUMENT+1), path.suffix.lower()==".html")
-            key = snapshot(self.store, f"file:{path.name}", text, path.name, {"name":path.name, "mode":"user-import"})
+            key = import_text_file(self.store, source)
             self.select_document(key)
             self.status.setText("文件已保存為可查來源。")
         self.perform(save)

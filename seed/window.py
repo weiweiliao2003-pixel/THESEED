@@ -54,14 +54,16 @@ PAGES = [
     ("人格與記憶", "經歷時間線"),
     ("人格與記憶", "成長證據"), ("技能系統", "探索與學習"), ("系統管理", "模型與金鑰"),
     ("系統管理", "API 用量與費用"), ("系統管理", "外觀設定"), ("技能系統", "本機知識庫"),
+    ("技能系統", "候選製作與測試"),
 ]
 MODEL_PAGE = 17
 RESOURCE_PAGE = 18
 SETTINGS_PAGE = 9
 SKILL_PAGE = 4
-SKILL_ROUTES = (SKILL_PAGE, 3, 5)
+SKILL_ROUTES = (SKILL_PAGE, 21, 3, 5)
 APPEARANCE_PAGE = 19
 KNOWLEDGE_PAGE = 20
+SKILL_WORKFLOW_PAGE = 21
 ITEM_ID = Qt.ItemDataRole.UserRole
 
 
@@ -1559,9 +1561,15 @@ class Research(Page):
         self.research_source = action("開啟來源與技能候選", self.open_research_source)
         self.research_source.setEnabled(False)
         self.snapshot_id = None
+        self.source_analysis = None
+        self.create_candidate = action("建立技能候選", self.build_source_candidate, primary=True)
+        self.source_knowledge = action("收錄知識段落", self.collect_source_quote)
+        self.create_candidate.setEnabled(False)
+        self.source_knowledge.setEnabled(False)
         self.cancel_tool.setEnabled(False)
         toolbar(layout, self.add, self.configure, self.check_tool)
         toolbar(layout, self.analyze, self.cancel_tool, self.research_source)
+        toolbar(layout, self.create_candidate, self.source_knowledge)
         self.layout.addWidget(panel)
         self.records = QTableWidget(0, 4)
         self.records.setAccessibleName("研究登錄紀錄")
@@ -1582,6 +1590,10 @@ class Research(Page):
         self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.records.itemSelectionChanged.connect(self.show_details)
         self.layout.addWidget(self.details)
+        self.analysis_result = QPlainTextEdit(readOnly=True)
+        self.analysis_result.setAccessibleName("來源功能分析")
+        self.analysis_result.setMinimumHeight(155)
+        self.layout.addWidget(self.analysis_result)
         self.evidence = QPlainTextEdit(readOnly=True)
         self.evidence.setAccessibleName("REA 分析證據")
         self.evidence.setMinimumHeight(105)
@@ -1625,6 +1637,19 @@ class Research(Page):
     def open_research_source(self):
         if self.snapshot_id is not None:
             self.window.pages[16].open_research_source(self.snapshot_id)
+
+    def build_source_candidate(self):
+        if self.snapshot_id is not None and self.source_analysis and self.source_analysis["operations"]:
+            self.window.navigate(SKILL_WORKFLOW_PAGE)
+            self.window.pages[SKILL_WORKFLOW_PAGE].create_from_source(self.snapshot_id)
+
+    def collect_source_quote(self):
+        if self.snapshot_id is not None:
+            rows = self.store.read("SELECT * FROM source_snapshots WHERE id=?", self.snapshot_id)
+            if rows:
+                self.window.navigate(KNOWLEDGE_PAGE)
+                self.window.pages[KNOWLEDGE_PAGE].perform(
+                    lambda: self.window.pages[KNOWLEDGE_PAGE].offer_quote(rows[0]))
 
     def analyze_selected(self):
         key = self.selected_record()
@@ -1776,8 +1801,12 @@ class Research(Page):
     def show_details(self):
         rows = self.records.selectionModel().selectedRows()
         self.snapshot_id = None
+        self.source_analysis = None
         self.analyze.setEnabled(False)
         self.research_source.setEnabled(False)
+        self.create_candidate.setEnabled(False)
+        self.source_knowledge.setEnabled(False)
+        self.analysis_result.clear()
         if not rows:
             self.evidence.clear()
             self.details.setText("選取一筆紀錄以查看完整指紋。" if self.records.rowCount() else "尚無研究紀錄。")
@@ -1789,6 +1818,20 @@ class Research(Page):
         data = json.loads(evidence[0][0]) if evidence else None
         if data and data.get("analyzer") == "saved-public-document":
             self.snapshot_id = data.get("snapshot_id")
+            from seed.learning import register_source_research, source_research
+            register_source_research(self.store, self.snapshot_id)
+            with self.store.connection() as db:
+                updated = source_research(db, self.snapshot_id)
+            self.source_analysis = analysis = json.loads(updated["document"])["analysis"]
+            self.analysis_result.setPlainText(
+                f"{analysis['title']}\n階段 · 文件分析完成 · {analysis['status']}\n分析器 · {analysis['analyzer']}\n"
+                f"THESEED 需求 · {analysis['gap']}\n工程對應 · {analysis['engineering_module']}\n"
+                f"來源版本 · {analysis['revision']}\n原文證據\n" + "\n".join(analysis["quotes"]) +
+                f"\n平台與依賴 · {analysis['platform']}\n授權 · {analysis['license']}\n{analysis['rea']}\n"
+                + ("下一步 · 建立技能候選，填寫樣本再驗證及安裝。" if analysis["operations"] else
+                   "下一步 · 可收錄知識段落；目前文字執行器不支援此項能力。"))
+            self.create_candidate.setEnabled(bool(analysis["operations"]))
+            self.source_knowledge.setEnabled(True)
         self.research_source.setEnabled(self.snapshot_id is not None)
         self.analyze.setEnabled(bool(self.snapshot_id is None and not self.worker and self.readiness and self.readiness["ready"]))
         self.evidence.setPlainText(json.dumps(data, ensure_ascii=False, indent=2) if data else "尚無分析證據。")
@@ -2704,7 +2747,9 @@ class MainWindow(QMainWindow):
         ]
         self.skill_center = QTabWidget(documentMode=True)
         self.skill_center.setAccessibleName("技能中心")
-        for route, title in zip(SKILL_ROUTES, ("已安裝技能", "技能工坊／候選", "技能關係／依賴"), strict=True):
+        from seed.skill_workflow import SkillWorkflow
+        self.pages.append(SkillWorkflow(self))
+        for route, title in zip(SKILL_ROUTES, ("已安裝技能", "候選製作／測試", "藍圖紀錄", "技能關係／依賴"), strict=True):
             view = QScrollArea(widgetResizable=True)
             view.setWidget(self.pages[route])
             self.skill_center.addTab(view, title)
@@ -2867,7 +2912,7 @@ class MainWindow(QMainWindow):
         rail = {1: "chat", 6: "person", 10: "clock", SKILL_PAGE: "tree", 9: "settings"}
         group_entry = {"工作空間": 1, "人格與記憶": 6, "技能系統": SKILL_PAGE, "系統管理": 9}
         for index, button in enumerate(self.navigation):
-            if index in (3, 5):
+            if index in (3, 5, SKILL_WORKFLOW_PAGE):
                 button.hide()
                 continue
             title = self.navigation_entries[index][1]

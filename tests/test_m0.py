@@ -51,7 +51,7 @@ class M0AcceptanceTests(unittest.TestCase):
     def navigate(self, index):
         self.window.navigate(index)
         self.app.processEvents()
-        self.assertEqual(self.window.stack.currentIndex(), 4 if index in (3, 5) else index)
+        self.assertEqual(self.window.stack.currentIndex(), 4 if index in (3, 5, 21) else index)
         return self.window.pages[index]
 
     def click(self, page, text):
