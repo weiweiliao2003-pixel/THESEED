@@ -36,7 +36,8 @@ class KnowledgePage(ListPage):
         self.panel.insertWidget(0, label("先加入來源，選取原文段落並審核，採信後即可離線搜尋。"))
         source_tools = QVBoxLayout()
         toolbar(source_tools, action("新增知識來源", lambda: self.add_source(), primary=True),
-                self.sources, action("查看來源／選段", self.select_source), action("更新來源", self.update_source))
+                self.sources)
+        toolbar(source_tools, action("查看來源／選段", self.select_source), action("更新來源", self.update_source))
         self.panel.insertLayout(1, source_tools)
         toolbar(self.panel, self.kind, self.query, action("本機查詢", lambda: self.perform(self.search), primary=True))
         self.panel.addWidget(self.use_experience)
