@@ -11,6 +11,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QPlainTextEdit, QPushButton
 
 from seed import knowledge
+from seed.capability_tasks import analyze_document, task_documents
 from seed.discovery import snapshot
 from seed.learning import source_research
 from seed.skill_workflow import SkillMaker
@@ -260,6 +261,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(knowledge.source_updated(self.store,new),1)
         self.assertFalse(knowledge.search(self.store,"original"))
         self.assertEqual(self.store.read("SELECT content FROM source_snapshots WHERE id=?",old)[0][0],original)
+
+    def test_canonical_python_document_and_retained_legacy_source(self):
+        document=task_documents("text")[0]
+        self.assertEqual(document["url"],"https://docs.python.org/3/builtins/stdtypes.html")
+        for url in (document["url"],*document["aliases"]):
+            key=snapshot(self.store,url,"str.strip removes leading and trailing whitespace.","Python",{})
+            row=self.store.read("SELECT * FROM source_snapshots WHERE id=?",key)[0]
+            self.assertIn("strip",analyze_document(row)["operations"])
 
 
 if __name__=="__main__":

@@ -11,7 +11,8 @@ TASKS = {
 }
 DOCUMENTS = (
     {"task":"text", "name":"Python 字串的首尾空白處理",
-     "url":"https://docs.python.org/3/library/stdtypes.html",
+     "url":"https://docs.python.org/3/builtins/stdtypes.html",
+     "aliases":["https://docs.python.org/3/library/stdtypes.html"],
      "description":"官方文件定義 str.strip、str.lower 等文字處理方法，可研究如何清理要檢索的文字。",
      "license":"PSF-2.0", "license_url":"https://docs.python.org/3/license.html",
      "operations":["strip","lower","upper"],"platform":"THESEED 已有受限文字操作；仍須以樣本驗證。"},
@@ -45,7 +46,7 @@ def task_documents(task):
 def analyze_document(row):
     refs = json.loads(row["refs"])
     task = refs.get("theseed_task")
-    declared = next((item for item in DOCUMENTS if item["url"] == row["source"]
+    declared = next((item for item in DOCUMENTS if row["source"] in (item["url"], *item.get("aliases", []))
                      or (item["url"].startswith("https://github.com/") and row["source"].startswith(item["url"]+"/"))), None)
     if not task and declared:
         task = declared["task"]
