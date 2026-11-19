@@ -55,6 +55,7 @@ class CatalogTests(unittest.TestCase):
             win.resize(1200, 790)
             win.show()
             page = win.pages[16]
+            page.scope.setCurrentIndex(page.scope.findData("catalog"))
             page.started_catalog = True
             win.navigate(16)
             result = catalog_projects("trending", TRENDING)
@@ -84,6 +85,7 @@ class CatalogTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             win = MainWindow(Store(Path(folder)))
             page = win.pages[16]
+            page.scope.setCurrentIndex(page.scope.findData("catalog"))
             page.started_catalog = True
             page.source.setCurrentIndex(page.source.findData("codeberg"))
             page.query.setText("forgejo")

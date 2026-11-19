@@ -123,7 +123,7 @@ class PublicRead(QObject):
         self.request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute, QNetworkRequest.RedirectPolicy.ManualRedirectPolicy)
         self.request.setAttribute(QNetworkRequest.Attribute.CookieLoadControlAttribute, QNetworkRequest.LoadControl.Manual)
         self.request.setAttribute(QNetworkRequest.Attribute.CookieSaveControlAttribute, QNetworkRequest.LoadControl.Manual)
-        self.request.setRawHeader(b"User-Agent", b"SEED-Desktop")
+        self.request.setRawHeader(b"User-Agent", b"THESEED/0.4.1 (+https://github.com/weiweiliao2003-pixel/THESEED)")
         if github:
             self.request.setRawHeader(b"Accept", b"application/vnd.github+json")
         for header, value in headers:
@@ -203,6 +203,30 @@ def parse_document(raw, html=False):
     if not content:
         raise ValueError("來源文件沒有可讀文字。")
     return content[:180_000]
+
+
+TEXT_EXTENSIONS = {".md", ".txt", ".json", ".yaml", ".yml", ".html", ".py", ".js", ".ts"}
+
+
+def import_text_file(store, source):
+    from pathlib import Path
+    path = Path(source)
+    if path.suffix.lower() not in TEXT_EXTENSIONS or not path.is_file():
+        raise ValueError("請選擇支援的文字檔。")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_DOCUMENT + 1)
+    content = parse_document(raw, path.suffix.lower() == ".html")
+    return snapshot(store, f"file:{path.name}", content, path.name,
+                    {"name": path.name, "mode": "user-import", "file_sha256": hashlib.sha256(raw).hexdigest(),
+                     "license": "Owner 選取的本機文件；原始授權待核對"})
+
+
+def save_public_document(store, url, body, kind):
+    url = document_url(url)
+    if not kind.startswith(("text/", "application/json", "application/yaml", "application/xml")):
+        raise ValueError("來源不是支援的文字或 API 文件。")
+    return snapshot(store, url, parse_document(body, "html" in kind), url,
+                    {"url": url, "evidence_kind": "document", "license": "尚未驗證"})
 
 
 def snapshot(store, source, content, title, refs, brief=""):

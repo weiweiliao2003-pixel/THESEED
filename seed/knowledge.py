@@ -72,6 +72,22 @@ def propose(store, snapshot_id, quote):
         return record["key"]
 
 
+def source_updated(store, snapshot_id):
+    with store.connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        source = db.execute("SELECT source,revision FROM source_snapshots WHERE id=?", (snapshot_id,)).fetchone()
+        changed = 0
+        for item in read_records(db, DOCUMENT):
+            anchor = item["source"]
+            if (anchor["source_url"] == source["source"] and anchor["revision"] != source["revision"]
+                    and item["status"] == "accepted"):
+                item["status"] = "stale"
+                item["audit"].append(["stale", stamp(), "使用者導入較新來源版本，請重新核對。"])
+                save(db, item)
+                changed += 1
+        return changed
+
+
 def transition(store, key, state, reason, *, replacement=None):
     reason = reason.strip()
     if not 1 <= len(reason) <= 500:
